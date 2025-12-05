@@ -47,7 +47,7 @@ import javax.inject.Inject
  * handling connection management, purchase flows, and data fetching.
  */
 internal class GoogleBillingClient @Inject constructor(
-    private val billing: Billing,
+    private val billingClientWrapper: BillingClientWrapper,
     private val config: BillingConfig,
     private val purchasesDataStore: PurchasesDataStore,
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -72,7 +72,7 @@ internal class GoogleBillingClient @Inject constructor(
         AtomicReference<BillingConnectionState>(BillingConnectionState.Disconnected)
 
     init {
-        billing.setOnPurchasesUpdatedListener(this::onPurchasesUpdated)
+        billingClientWrapper.setOnPurchasesUpdatedListener(this::onPurchasesUpdated)
 
         monitorConnectionState()
         observeAppLifecycle()
@@ -80,7 +80,7 @@ internal class GoogleBillingClient @Inject constructor(
     }
 
     private fun monitorConnectionState() {
-        billing.connectionState
+        billingClientWrapper.connectionState
             .onEach { state ->
                 connectionState.set(state)
                 Timber.tag(TAG).d("Connection state changed: $state")
@@ -189,7 +189,7 @@ internal class GoogleBillingClient @Inject constructor(
     override suspend fun getStoreCountry(): String? = withTimeout(OPERATION_TIMEOUT_MS) {
         ensureConnection()
         try {
-            billing.getBillingConfig()?.countryCode
+            billingClientWrapper.getBillingConfig()?.countryCode
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error getting store country")
             null
@@ -234,7 +234,7 @@ internal class GoogleBillingClient @Inject constructor(
 
     override suspend fun showInAppMessages(activity: Activity) {
         try {
-            billing.showInAppMessages(activity)
+            billingClientWrapper.showInAppMessages(activity)
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error showing subscription recovery messages")
             throw e.toPurchasesException()
@@ -266,7 +266,7 @@ internal class GoogleBillingClient @Inject constructor(
         } ?: product.subscriptionDetails?.options?.firstOrNull()
 
         val purchase = try {
-            billing.launchBillingFlow(
+            billingClientWrapper.launchBillingFlow(
                 activity = activity,
                 productId = productId,
                 productType = product.type.toBillingProductType(),
@@ -323,7 +323,7 @@ internal class GoogleBillingClient @Inject constructor(
         return coroutineScope.async {
             val subscriptionPurchasesDeferred = async {
                 try {
-                    billing.queryPurchases(SUBS)
+                    billingClientWrapper.queryPurchases(SUBS)
                         .mapNotNull { it.products.firstOrNull() }
                         .toSet()
                 } catch (e: Exception) {
@@ -334,7 +334,7 @@ internal class GoogleBillingClient @Inject constructor(
 
             val inAppPurchasesDeferred = async {
                 try {
-                    billing.queryPurchases(INAPP)
+                    billingClientWrapper.queryPurchases(INAPP)
                         .mapNotNull { it.products.firstOrNull() }
                         .toSet()
                 } catch (e: Exception) {
@@ -345,7 +345,7 @@ internal class GoogleBillingClient @Inject constructor(
 
             val inAppPurchaseHistoryDeferred = async {
                 try {
-                    billing.queryPurchaseHistory(INAPP)
+                    billingClientWrapper.queryPurchaseHistory(INAPP)
                         .filter {
                             config.consumedInAppPurchasesTimeMillis?.let { cutoffTime ->
                                 it.purchaseTime <= cutoffTime
@@ -383,7 +383,7 @@ internal class GoogleBillingClient @Inject constructor(
 
         for (productType in types) {
             try {
-                val products = billing.getProducts(productIds, productType.toBillingProductType())
+                val products = billingClientWrapper.getProducts(productIds, productType.toBillingProductType())
                     .mapNotNull { product -> product.toProduct() }
 
                 result.addAll(products)
@@ -411,7 +411,7 @@ internal class GoogleBillingClient @Inject constructor(
 
             repeat(maxRetries) { attempt ->
                 try {
-                    val newState = billing.connect()
+                    val newState = billingClientWrapper.connect()
                     connectionState.set(newState)
 
                     when (newState) {
@@ -478,7 +478,7 @@ internal class GoogleBillingClient @Inject constructor(
     suspend fun shutdown() {
         try {
             fetchJob?.cancel()
-            billing.disconnect()
+            billingClientWrapper.disconnect()
             Timber.tag(TAG).d("GooglePurchases shutdown complete")
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error during shutdown")

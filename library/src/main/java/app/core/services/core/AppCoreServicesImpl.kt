@@ -19,7 +19,7 @@ import app.core.services.billing.AnalyticsBillingClientDecorator
 import app.core.services.billing.BillingClient
 import app.core.services.billing.GoogleBillingStoreCountryProvider
 import app.core.services.billing.PurchasesPreferencesDataStore
-import app.core.services.billing.google.Billing
+import app.core.services.billing.google.BillingClientWrapper
 import app.core.services.billing.google.GoogleBillingClient
 import app.core.services.billing.google.ObfuscatedUserIdProvider
 import app.core.services.billing.model.Purchases
@@ -326,7 +326,7 @@ internal class AppCoreServicesImpl(
             val billingClient = AnalyticsBillingClientDecorator(
                 decorated = GoogleBillingClient(
                     config = configuration.billingConfig,
-                    billing = Billing.create(
+                    billingClientWrapper = BillingClientWrapper.create(
                         context = configuration.context,
                         obfuscatedUserIdProvider = obfuscatedUserIdProvider,
                         ioDispatcher = Dispatchers.IO,

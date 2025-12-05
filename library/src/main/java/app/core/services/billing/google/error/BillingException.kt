@@ -23,6 +23,11 @@ internal sealed class BillingException(message: String) : Exception(message) {
     class ServiceUnavailableException(message: String) : BillingException(message)
 
     /**
+     * The billing service is not available on the device (e.g., the Play Store app is outdated or not set up).
+     */
+    class BillingUnavailableException(message: String) : BillingException(message)
+
+    /**
      *  A network error occurred during the operation.
      */
     class NetworkErrorException(message: String) : BillingException(message)
@@ -55,6 +60,7 @@ internal sealed class BillingException(message: String) : Exception(message) {
             return when (billingResult.responseCode) {
                 BillingResponseCode.USER_CANCELED -> UserCanceledException(message)
                 BillingResponseCode.SERVICE_UNAVAILABLE -> ServiceUnavailableException(message)
+                BillingResponseCode.BILLING_UNAVAILABLE -> BillingUnavailableException(message)
                 BillingResponseCode.ITEM_ALREADY_OWNED -> ItemAlreadyOwnedException(message)
                 BillingResponseCode.SERVICE_DISCONNECTED -> ServiceDisconnectedException(message)
                 BillingResponseCode.NETWORK_ERROR -> NetworkErrorException(message)
