@@ -21,7 +21,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.4.0\""
+            "\"1.4.1\""
         )
     }
 
@@ -43,10 +43,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
     // Compose
-    implementation("androidx.compose.ui:ui:1.9.4")
+    implementation("androidx.compose.ui:ui:1.10.0")
 
     // Lifecycle
-    val lifecycleVersion = "2.9.4"
+    val lifecycleVersion = "2.10.0"
     implementation("androidx.lifecycle:lifecycle-common:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-process:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
@@ -55,7 +55,7 @@ dependencies {
     implementation("com.android.billingclient:billing-ktx:7.1.1")
 
     // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.1.7")
+    implementation("androidx.datastore:datastore-preferences:1.2.0")
 
     // Google Play Services
     implementation("com.google.android.gms:play-services-ads-identifier:18.2.0")
@@ -64,11 +64,11 @@ dependencies {
 
     // Analytics
     implementation("com.amplitude:analytics-android:1.22.4")
-    implementation("com.amplitude:plugin-session-replay-android:0.21.2")
-    api("com.appsflyer:af-android-sdk:6.17.4")
+    implementation("com.amplitude:plugin-session-replay-android:0.22.1")
+    api("com.appsflyer:af-android-sdk:6.17.5")
 
     // Firebase
-    api(platform("com.google.firebase:firebase-bom:34.5.0"))
+    api(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
 
@@ -80,7 +80,7 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.6")
 
     // Network
-    val ktorVersion = "3.3.2"
+    val ktorVersion = "3.3.3"
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-android:$ktorVersion")
     implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
@@ -89,7 +89,7 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:5.3.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

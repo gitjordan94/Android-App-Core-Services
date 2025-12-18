@@ -38,13 +38,13 @@ class AppsFlyerAnalytics(
             devKey,
             object : AppsFlyerConversionListener {
                 override fun onConversionDataSuccess(conversionData: MutableMap<String, Any>?) {
-                    Timber.Forest.d("onConversionDataSuccess: $conversionData.")
+                    Timber.d("onConversionDataSuccess: $conversionData.")
                     conversionDataFlow.value = conversionData
                     appsFlyer.unregisterConversionListener()
                 }
 
                 override fun onConversionDataFail(errorMessage: String?) {
-                    Timber.Forest.e(
+                    Timber.e(
                         AppsFlyerConversionFailureException(errorMessage ?: "Unknown error"),
                         "AppsFlyer conversion data fail: $errorMessage."
                     )
@@ -53,11 +53,11 @@ class AppsFlyerAnalytics(
                 }
 
                 override fun onAppOpenAttribution(attributionData: MutableMap<String, String>?) {
-                    Timber.Forest.d("onAppOpenAttribution: $attributionData.")
+                    Timber.d("onAppOpenAttribution: $attributionData.")
                 }
 
                 override fun onAttributionFailure(errorMessage: String?) {
-                    Timber.Forest.e(
+                    Timber.e(
                         AppsFlyerAttributionFailureException(errorMessage ?: "Unknown error"),
                         "AppsFlyer attribution failure: $errorMessage."
                     )
@@ -91,6 +91,10 @@ class AppsFlyerAnalytics(
         } else {
             logEvent(AFInAppEventType.PURCHASE, mapOf("productId" to purchase.product.id))
         }
+    }
+
+    internal fun setAdditionalData(data: Map<String, Any>) {
+        appsFlyer.setAdditionalData(data)
     }
 
     internal suspend fun awaitConversionData(): Map<String, Any?>? {

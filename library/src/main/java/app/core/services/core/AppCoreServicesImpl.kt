@@ -50,7 +50,7 @@ import timber.log.Timber
 internal class AppCoreServicesImpl(
     override val billingClient: BillingClient,
     override val deepLinkManager: DeepLinkManager,
-    firebaseAnalytics: FirebaseAnalytics,
+    private val firebaseAnalytics: FirebaseAnalytics,
     private val appUpdateManager: AppUpdateManager,
     private val firebaseRemoteConfig: FirebaseRemoteConfig,
     private val amplitudeAnalytics: AmplitudeAnalytics,
@@ -132,6 +132,8 @@ internal class AppCoreServicesImpl(
                     }
                 }
 
+                setupFirebaseAppInstanceId()
+
                 val remoteConfigsDeferred = getRemoteConfigs()
                 val purchasesDeferred = getPurchases()
                 val storeCountryDeferred = queryStoreCountry()
@@ -180,6 +182,18 @@ internal class AppCoreServicesImpl(
 
                 configurationResult!!
             }
+        }
+    }
+
+    private suspend fun setupFirebaseAppInstanceId() {
+        Timber.d("Setting up Firebase app instance ID.")
+
+        try {
+            val appInstanceId = firebaseAnalytics.getAppInstanceId()
+            Timber.d("Firebase app instance ID: $appInstanceId")
+            appsFlyerAnalytics.setAdditionalData(mapOf("firebase_app_instance_id" to appInstanceId))
+        } catch (e: Throwable) {
+            Timber.e(e, "Failed to get app instance ID.")
         }
     }
 

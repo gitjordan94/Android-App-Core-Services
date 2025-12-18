@@ -8,8 +8,9 @@ import app.core.services.analytics.PurchaseEventLogger
 import app.core.services.common.toBundle
 import app.core.services.core.AnalyticsEvents
 import app.core.services.billing.model.Purchase
+import kotlinx.coroutines.tasks.await
 
-class FirebaseAnalytics : Analytics, PurchaseEventLogger {
+internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
     private val analytics = Firebase.analytics
 
     internal fun setUserId(userId: String?) {
@@ -42,5 +43,9 @@ class FirebaseAnalytics : Analytics, PurchaseEventLogger {
                 )
             )
         }
+    }
+
+    internal suspend fun getAppInstanceId(): String {
+        return analytics.appInstanceId.await()
     }
 }
