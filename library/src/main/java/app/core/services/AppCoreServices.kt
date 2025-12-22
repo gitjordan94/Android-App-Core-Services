@@ -92,7 +92,7 @@ interface AppCoreServices {
         val remoteConfigParameters: RemoteConfigParameters,
         val attributionServerConfig: AttributionServerConfig? = null,
         val sessionReplayConfig: SessionReplayConfig = SessionReplayConfig(),
-        val dataStoreFileName: String = "core-services-data"
+        val dataStoreFileName: String,
     )
 
     companion object {
