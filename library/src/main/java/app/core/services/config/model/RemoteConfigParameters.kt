@@ -38,7 +38,7 @@ class RemoteConfigParameters {
     fun setGeneralPaywall(value: String) = param(
         key = AB_PAYWALL_GENERAL,
         value = value,
-        target = RemoteConfigTarget.any()
+        target = RemoteConfigTarget.sources(MediaSourceType.ORGANIC)
     )
 
     fun setFacebookPaywall(value: String) = param(
