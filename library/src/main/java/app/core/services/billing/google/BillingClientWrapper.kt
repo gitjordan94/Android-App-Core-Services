@@ -3,13 +3,11 @@ package app.core.services.billing.google
 import android.app.Activity
 import android.content.Context
 import androidx.annotation.UiThread
-import app.core.services.billing.google.error.BillingException
-import app.core.services.billing.google.extensions.connectOrThrow
-import app.core.services.billing.google.extensions.message
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClient.BillingResponseCode
 import com.android.billingclient.api.BillingClient.ProductType
+import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingConfig
 import com.android.billingclient.api.BillingFlowParams
 import com.android.billingclient.api.BillingResult
@@ -47,6 +45,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import app.core.services.billing.google.error.BillingException
+import app.core.services.billing.google.extensions.message
+import kotlinx.coroutines.TimeoutCancellationException
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -60,9 +61,6 @@ import kotlin.math.min
 
 internal interface BillingClientWrapper {
     val connectionState: StateFlow<BillingConnectionState>
-
-    @Throws(BillingException::class)
-    suspend fun connect(): BillingConnectionState
 
     suspend fun disconnect()
 
@@ -104,8 +102,8 @@ internal interface BillingClientWrapper {
             obfuscatedUserIdProvider: ObfuscatedUserIdProvider,
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO
         ): BillingClientWrapper {
-            return DefaultBillingClientWrapper(
-                clientFactory = DefaultBillingClientWrapper.BillingClientFactory(context),
+            return GoogleBilling(
+                clientFactory = GoogleBilling.BillingClientFactory(context),
                 obfuscatedUserIdProvider = obfuscatedUserIdProvider,
                 ioDispatcher = ioDispatcher,
                 acknowledgePurchases = acknowledgePurchases
@@ -122,11 +120,12 @@ private const val MAX_RETRY_ATTEMPTS = 3
 private const val INITIAL_RETRY_DELAY_MS = 1000L
 
 @Singleton
-internal class DefaultBillingClientWrapper @Inject constructor(
+internal class GoogleBilling @Inject constructor(
     private val acknowledgePurchases: Boolean,
     private val clientFactory: BillingClientFactory,
     private val obfuscatedUserIdProvider: ObfuscatedUserIdProvider,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) : BillingClientWrapper, PurchasesUpdatedListener {
 
     private val coroutineScope = CoroutineScope(ioDispatcher + SupervisorJob())
@@ -174,65 +173,56 @@ internal class DefaultBillingClientWrapper @Inject constructor(
         }
     }
 
-    override suspend fun connect(): BillingConnectionState = withTimeout(CONNECTION_TIMEOUT_MS) {
-        connectionMutex.withLock {
-            val currentState = _billingConnectionState.value
+    private val billingClientStateListener = object : BillingClientStateListener {
+        override fun onBillingSetupFinished(billingResult: BillingResult) {
+            isConnecting.set(false)
 
-            // Return immediately if already connected
-            if (currentState is BillingConnectionState.Connected) {
-                return@withTimeout currentState
+            when (billingResult.responseCode) {
+                BillingResponseCode.OK -> {
+                    _billingConnectionState.tryEmit(BillingConnectionState.Connected)
+                    connectionAttempts.set(0)
+                    reconnectMilliseconds = RECONNECT_TIMER_START_MILLISECONDS
+                    coroutineScope.launch { onBillingSetupFinished() }
+                }
+
+                else -> {
+                    val error = BillingException.from(billingResult)
+                    val errorState = BillingConnectionState.Error(error)
+                    _billingConnectionState.tryEmit(errorState)
+                }
             }
+        }
 
-            // If currently connecting, wait for the result
-            if (isConnecting.get()) {
-                return@withTimeout connectionState.first { it !is BillingConnectionState.Disconnected }
-            }
-
-            performConnection()
+        override fun onBillingServiceDisconnected() {
+            isConnecting.set(false)
+            _billingConnectionState.tryEmit(BillingConnectionState.Disconnected)
+            scheduleReconnection()
         }
     }
 
-    private suspend fun performConnection(): BillingConnectionState {
+    private suspend fun startConnectionOnMain() {
+        if (!isConnecting.compareAndSet(false, true)) {
+            return
+        }
+
         try {
-            isConnecting.set(true)
+            _billingConnectionState.tryEmit(BillingConnectionState.Connecting)
 
-            if (billingClient?.isReady != true) {
-                billingClient?.endConnection()
-                billingClient = clientFactory.buildClient(this)
-                Timber.tag(TAG).d("Created new billing client")
+            withContext(mainDispatcher) {
+                // Create new client if needed
+                if (billingClient == null || billingClient?.connectionState == BillingClient.ConnectionState.CLOSED) {
+                    billingClient = clientFactory.buildClient(this@GoogleBilling)
+                    Timber.tag(TAG).d("Created new billing client")
+                }
+
+                billingClient?.startConnection(billingClientStateListener)
             }
-
-            billingClient?.connectOrThrow()
-
-            connectionAttempts.set(0)
-            reconnectMilliseconds = RECONNECT_TIMER_START_MILLISECONDS
-
-            val connectedState = BillingConnectionState.Connected
-            _billingConnectionState.tryEmit(connectedState)
-
-            coroutineScope.launch { onBillingSetupFinished() }
-
-            return connectedState
-        } catch (e: BillingException) {
-            Timber.tag(TAG).e(e, "Billing connection failed")
-            val errorState = BillingConnectionState.Error(e)
-            _billingConnectionState.tryEmit(errorState)
-
-            if (e is BillingException.ServiceDisconnectedException) {
-                scheduleReconnection()
-            }
-
-            return errorState
         } catch (e: Throwable) {
-            Timber.tag(TAG).e(e, "Unexpected error during connection")
-            val error = BillingException.DeveloperErrorException(e.message ?: "Unknown error")
-            val errorState = BillingConnectionState.Error(error)
-            _billingConnectionState.tryEmit(errorState)
-
-            return errorState
-
-        } finally {
             isConnecting.set(false)
+            Timber.tag(TAG).e(e, "Failed to start billing connection")
+            val exception =
+                BillingException.DeveloperErrorException("Failed to start connection: ${e.message}")
+            _billingConnectionState.tryEmit(BillingConnectionState.Error(exception))
         }
     }
 
@@ -270,6 +260,7 @@ internal class DefaultBillingClientWrapper @Inject constructor(
             val attempts = connectionAttempts.incrementAndGet()
 
             if (attempts > MAX_RETRY_ATTEMPTS) {
+                reconnectionAlreadyScheduled.set(false)
                 Timber.tag(TAG).w("Max reconnection attempts reached")
                 return
             }
@@ -279,8 +270,7 @@ internal class DefaultBillingClientWrapper @Inject constructor(
                     delay(reconnectMilliseconds)
                     reconnectionAlreadyScheduled.set(false)
 
-                    connect()
-
+                    ensureConnection()
                 } catch (e: Exception) {
                     Timber.tag(TAG).e(e, "Reconnection failed")
                     reconnectionAlreadyScheduled.set(false)
@@ -508,9 +498,7 @@ internal class DefaultBillingClientWrapper @Inject constructor(
                             }
 
                             else -> {
-                                continuation.resumeWithException(
-                                    BillingException.from(billingResult)
-                                )
+                                continuation.resumeWithException(BillingException.from(billingResult))
                             }
                         }
                     }
@@ -547,11 +535,35 @@ internal class DefaultBillingClientWrapper @Inject constructor(
     }
 
     private suspend fun ensureConnection() {
-        when (val currentState = connectionState.value) {
-            is BillingConnectionState.Connected -> return
-            is BillingConnectionState.Error -> throw currentState.e
-            BillingConnectionState.Disconnected -> {
-                connect() // This will throw if connection fails
+        if (billingClient?.isReady == true) {
+            return
+        }
+
+        connectionMutex.withLock {
+            if (billingClient?.isReady == true) {
+                return
+            }
+
+            if (!isConnecting.get()) {
+                startConnectionOnMain()
+            }
+
+            try {
+                withTimeout(CONNECTION_TIMEOUT_MS) {
+                    connectionState.first { state ->
+                        state is BillingConnectionState.Connected ||
+                                state is BillingConnectionState.Error
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                Timber.e(e, "Connection timed out")
+                throw BillingException.ServiceUnavailableException("Connection timed out")
+            }
+
+            when (val finalState = connectionState.value) {
+                BillingConnectionState.Connected -> return
+                is BillingConnectionState.Error -> throw finalState.e
+                else -> throw BillingException.ServiceUnavailableException("Failed to connect. Final state: $finalState")
             }
         }
     }
@@ -684,7 +696,7 @@ internal class DefaultBillingClientWrapper @Inject constructor(
     }
 
     private companion object {
-        private const val TAG = "BillingClientWrapper"
+        private const val TAG = "Billing"
 
         private val RETRYABLE_ERRORS = setOf(
             BillingResponseCode.ERROR,

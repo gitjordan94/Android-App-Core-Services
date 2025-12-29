@@ -2,11 +2,13 @@ package app.core.services.appsflyer.attribution
 
 import app.core.services.analytics.Analytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
+import app.core.services.appsflyer.ConversionDataResult
 import app.core.services.attribution.AttributionParser
 import app.core.services.attribution.AttributionProvider
 import app.core.services.core.model.Attribution
 import app.core.services.data.PreferencesDataStore
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.firstOrNull
 import timber.log.Timber
 
 internal class AppsFlyerAttributionProvider(
@@ -22,19 +24,31 @@ internal class AppsFlyerAttributionProvider(
             Timber.d("Preferences AppsFlyer attribution: $attributionData")
 
             if (attributionData == null) {
-                val conversionData = appsFlyerAnalytics.awaitConversionData()
+                val conversionData = appsFlyerAnalytics.conversionDataFlow
+                    .firstOrNull { it !is ConversionDataResult.Loading }
 
-                analytics.logEvent(
-                    event = "AF_CONVERSION_DATA",
-                    properties = conversionData
-                )
+                Timber.d("AppsFlyer conversion data: $conversionData")
 
-                if (!conversionData.isNullOrEmpty()) {
-                    attributionData = appsFlyerAttributionParser.parse(conversionData)
-                    preferencesDataStore.setAttributionData(attributionData)
+                if (conversionData is ConversionDataResult.Success) {
+                    analytics.logEvent(
+                        event = "AF_CONVERSION_DATA",
+                        properties = conversionData.data
+                    )
+
+                    if (!conversionData.data.isNullOrEmpty()) {
+                        attributionData = appsFlyerAttributionParser.parse(conversionData.data)
+                        preferencesDataStore.setAttributionData(attributionData)
+                    }
+                } else if (conversionData is ConversionDataResult.Error) {
+                    analytics.logEvent(
+                        "AF_CONVERSION_DATA_FAILED",
+                        mapOf("error_message" to conversionData.errorMessage)
+                    )
                 }
 
                 Timber.d("AppsFlyer attribution data: $attributionData")
+            } else {
+                Timber.d("AppsFlyer attribution data from preferences: $attributionData")
             }
 
             attributionData

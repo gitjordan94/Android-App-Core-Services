@@ -37,7 +37,6 @@ import app.core.services.billing.model.ProductType
 import app.core.services.billing.model.Purchase
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 
 /**
@@ -56,20 +55,16 @@ internal class GoogleBillingClient @Inject constructor(
     private companion object {
         private const val TAG = "Purchases"
         private const val RETRY_COUNT = 3
-        private const val MAX_CONNECTION_RETRIES = 3
         private const val OPERATION_TIMEOUT_MS = 30_000L
         private const val CONNECTION_RETRY_DELAY_MS = 2_000L
     }
 
     private val fetchMutex = Mutex()
-    private val connectionMutex = Mutex()
 
     @Volatile
     private var fetchJob: Job? = null
 
     private val isInitialized = AtomicBoolean(false)
-    private val connectionState =
-        AtomicReference<BillingConnectionState>(BillingConnectionState.Disconnected)
 
     init {
         billingClientWrapper.setOnPurchasesUpdatedListener(this::onPurchasesUpdated)
@@ -82,7 +77,6 @@ internal class GoogleBillingClient @Inject constructor(
     private fun monitorConnectionState() {
         billingClientWrapper.connectionState
             .onEach { state ->
-                connectionState.set(state)
                 Timber.tag(TAG).d("Connection state changed: $state")
 
                 when (state) {
@@ -99,6 +93,11 @@ internal class GoogleBillingClient @Inject constructor(
                     BillingConnectionState.Disconnected -> {
                         Timber.tag(TAG).w("Billing disconnected")
                     }
+
+                    BillingConnectionState.Connecting -> {
+                        Timber.tag(TAG).d("Billing connecting")
+                    }
+
                 }
             }
             .catch { e ->
@@ -115,7 +114,6 @@ internal class GoogleBillingClient @Inject constructor(
                     if (isInitialized.get()) {
                         coroutineScope.launch {
                             try {
-                                ensureConnection()
                                 loadPurchases()
                             } catch (e: Exception) {
                                 Timber.tag(TAG).e(e, "Error refreshing on foreground")
@@ -130,7 +128,6 @@ internal class GoogleBillingClient @Inject constructor(
     private fun performInitialSetup() {
         coroutineScope.launch {
             try {
-                ensureConnection()
                 performInitialFetch()
             } catch (e: Exception) {
                 Timber.tag(TAG).e(e, "Error in initial setup")
@@ -172,13 +169,6 @@ internal class GoogleBillingClient @Inject constructor(
                     val delay = CONNECTION_RETRY_DELAY_MS * (attempt + 1)
                     Timber.tag(TAG).w("Fetch attempt ${attempt + 1} failed, retrying in ${delay}ms")
                     delay(delay)
-
-                    // Try to reconnect if needed
-                    try {
-                        ensureConnection()
-                    } catch (connectionException: Exception) {
-                        Timber.tag(TAG).w(connectionException, "Reconnection failed")
-                    }
                 }
             }
         }
@@ -187,7 +177,6 @@ internal class GoogleBillingClient @Inject constructor(
     }
 
     override suspend fun getStoreCountry(): String? = withTimeout(OPERATION_TIMEOUT_MS) {
-        ensureConnection()
         try {
             billingClientWrapper.getBillingConfig()?.countryCode
         } catch (e: Exception) {
@@ -246,8 +235,6 @@ internal class GoogleBillingClient @Inject constructor(
         productId: String,
         offerToken: String? = null
     ): Purchase {
-        ensureConnection()
-
         val product = try {
             getProducts(
                 productIds = listOf(productId),
@@ -297,8 +284,6 @@ internal class GoogleBillingClient @Inject constructor(
     }
 
     private suspend fun fetchPurchases(): Purchases = withTimeout(OPERATION_TIMEOUT_MS) {
-        ensureConnection()
-
         try {
             val (subsPurchases, inAppPurchases, purchaseHistory) = fetchAllPurchaseData()
 
@@ -370,91 +355,37 @@ internal class GoogleBillingClient @Inject constructor(
     override suspend fun getProducts(
         productIds: List<String>,
         type: ProductType?,
-    ): List<Product> = withTimeout(OPERATION_TIMEOUT_MS) {
-        if (productIds.isEmpty()) return@withTimeout emptyList()
-
-        ensureConnection()
-
-        val types = type?.let { setOf(it) } ?: setOf(
-            ProductType.ONE_TIME_PURCHASE,
-            ProductType.SUBSCRIPTION
-        )
-        val result = mutableListOf<Product>()
-
-        for (productType in types) {
-            try {
-                val products = billingClientWrapper.getProducts(productIds, productType.toBillingProductType())
-                    .mapNotNull { product -> product.toProduct() }
-
-                result.addAll(products)
-            } catch (e: Exception) {
-                Timber.tag(TAG).e(e, "Error fetching products for type $productType")
-                throw e.toPurchasesException()
-            }
+    ): List<Product> {
+        if (productIds.isEmpty()) {
+            return emptyList()
         }
 
-        result.sortedBy { product ->
-            productIds.indexOf(product.id).takeIf { it != -1 } ?: Int.MAX_VALUE
-        }
-    }
+        return withTimeout(OPERATION_TIMEOUT_MS) {
+            val types = type?.let { setOf(it) } ?: setOf(
+                ProductType.ONE_TIME_PURCHASE,
+                ProductType.SUBSCRIPTION
+            )
+            val result = mutableListOf<Product>()
 
-    private suspend fun ensureConnection(maxRetries: Int = MAX_CONNECTION_RETRIES) {
-        connectionMutex.withLock {
-            val currentState = connectionState.get()
-
-            // Already connected
-            if (currentState is BillingConnectionState.Connected) {
-                return
-            }
-
-            var lastException: Exception? = null
-
-            repeat(maxRetries) { attempt ->
+            for (productType in types) {
                 try {
-                    val newState = billingClientWrapper.connect()
-                    connectionState.set(newState)
-
-                    when (newState) {
-                        is BillingConnectionState.Connected -> {
-                            Timber.tag(TAG).d("Connection established successfully")
-                            return
-                        }
-
-                        is BillingConnectionState.Error -> throw newState.e
-
-                        BillingConnectionState.Disconnected -> {
-                            throw BillingClientException(
-                                BillingError.NetworkError,
-                                "Failed to connect"
-                            )
-                        }
-                    }
-                } catch (e: TimeoutCancellationException) {
-                    Timber.tag(TAG).e(e, "Connection attempt timed out")
-
-                    lastException =
-                        BillingClientException(BillingError.NetworkError, "Connection timeout")
-                    if (attempt < maxRetries - 1) {
-                        val delay = CONNECTION_RETRY_DELAY_MS * (attempt + 1)
-                        Timber.tag(TAG)
-                            .w("Connection attempt ${attempt + 1} timed out, retrying in ${delay}ms")
-                        delay(delay)
-                    }
-                } catch (e: Exception) {
-                    lastException = e
-                    if (attempt < maxRetries - 1) {
-                        val delay = CONNECTION_RETRY_DELAY_MS * (attempt + 1)
-                        Timber.tag(TAG).w(
-                            e,
-                            "Connection attempt ${attempt + 1} failed, retrying in ${delay}ms"
+                    val products =
+                        billingClientWrapper.getProducts(
+                            productIds,
+                            productType.toBillingProductType()
                         )
-                        delay(delay)
-                    }
+                            .mapNotNull { product -> product.toProduct() }
+
+                    result.addAll(products)
+                } catch (e: Exception) {
+                    Timber.tag(TAG).e(e, "Error fetching products for type $productType")
+                    throw e.toPurchasesException()
                 }
             }
 
-            throw lastException?.toPurchasesException()
-                ?: BillingClientException(BillingError.NetworkError)
+            result.sortedBy { product ->
+                productIds.indexOf(product.id).takeIf { it != -1 } ?: Int.MAX_VALUE
+            }
         }
     }
 
@@ -505,6 +436,10 @@ internal class GoogleBillingClient @Inject constructor(
 
             is BillingException.DeveloperErrorException -> {
                 BillingClientException(BillingError.DeveloperError, message)
+            }
+
+            is BillingException.BillingUnavailableException -> {
+                BillingClientException(BillingError.ServiceUnavailableError, message)
             }
 
             is TimeoutCancellationException -> {

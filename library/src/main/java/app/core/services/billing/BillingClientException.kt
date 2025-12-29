@@ -9,6 +9,7 @@ class BillingClientException(
 
 enum class BillingError(val description: String) {
     NetworkError("Error performing request."),
+    ServiceUnavailableError("Billing service is unavailable."),
     ProductNotAvailableForPurchaseError("Product is not available for purchase."),
     DeveloperError("Developer error."),
     UnknownError("Unknown error."),

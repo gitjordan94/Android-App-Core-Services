@@ -9,6 +9,7 @@ import app.core.services.analytics.CompositeAnalytics
 import app.core.services.analytics.amplitude.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
+import app.core.services.appsflyer.ConversionDataResult
 import app.core.services.appsflyer.attribution.AppsFlyerAttributionProvider
 import app.core.services.appupdates.AppUpdateManager
 import app.core.services.attribution.AttributionProvider
@@ -43,6 +44,10 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
@@ -79,6 +84,24 @@ internal class AppCoreServicesImpl(
             amplitudeAnalytics.setUserId(appsFlyerUID)
             firebaseAnalytics.setUserId(appsFlyerUID)
         }
+
+        appsFlyerAnalytics.conversionDataFlow
+            .filterNot { it is ConversionDataResult.Loading }
+            .transform { result ->
+                val previousValue = appsFlyerAnalytics.conversionDataFlow.value
+
+                val wasAlreadyResolved =
+                    previousValue is ConversionDataResult.Success || previousValue is ConversionDataResult.Error
+
+                if (wasAlreadyResolved && result != previousValue) {
+                    emit(result)
+                }
+            }
+            .onEach { result ->
+                val data = (result as? ConversionDataResult.Success)?.data
+                analytics.logEvent("AF_CONVERSION_DATA_UPDATED", data)
+            }
+            .launchIn(applicationScope)
     }
 
     override suspend fun initialize(isFirstLaunch: Boolean?): ConfigurationResult {

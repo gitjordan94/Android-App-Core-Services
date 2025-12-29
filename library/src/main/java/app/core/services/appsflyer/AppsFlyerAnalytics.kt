@@ -11,17 +11,17 @@ import com.appsflyer.AFInAppEventType
 import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
-class AppsFlyerAnalytics(
+internal class AppsFlyerAnalytics(
     devKey: String,
-    private val applicationContext: Context
+    private val applicationContext: Context,
+    private val appsFlyer: AppsFlyerLib = AppsFlyerLib.getInstance()
 ) : Analytics, PurchaseEventLogger {
-    private val appsFlyer = AppsFlyerLib.getInstance()
-
-    private val conversionDataFlow = MutableStateFlow<Map<String, Any?>?>(null)
+    private val _conversionDataFlow =
+        MutableStateFlow<ConversionDataResult>(ConversionDataResult.Loading)
+    internal val conversionDataFlow = _conversionDataFlow.asStateFlow()
 
     internal var appsFlyerUID: String? = null
         private set
@@ -39,8 +39,7 @@ class AppsFlyerAnalytics(
             object : AppsFlyerConversionListener {
                 override fun onConversionDataSuccess(conversionData: MutableMap<String, Any>?) {
                     Timber.d("onConversionDataSuccess: $conversionData.")
-                    conversionDataFlow.value = conversionData
-                    appsFlyer.unregisterConversionListener()
+                    _conversionDataFlow.value = ConversionDataResult.Success(conversionData)
                 }
 
                 override fun onConversionDataFail(errorMessage: String?) {
@@ -48,8 +47,8 @@ class AppsFlyerAnalytics(
                         AppsFlyerConversionFailureException(errorMessage ?: "Unknown error"),
                         "AppsFlyer conversion data fail: $errorMessage."
                     )
-                    conversionDataFlow.value = emptyMap()
-                    appsFlyer.unregisterConversionListener()
+
+                    _conversionDataFlow.value = ConversionDataResult.Error(errorMessage)
                 }
 
                 override fun onAppOpenAttribution(attributionData: MutableMap<String, String>?) {
@@ -95,11 +94,5 @@ class AppsFlyerAnalytics(
 
     internal fun setAdditionalData(data: Map<String, Any>) {
         appsFlyer.setAdditionalData(data)
-    }
-
-    internal suspend fun awaitConversionData(): Map<String, Any?>? {
-        return conversionDataFlow
-            .filterNotNull()
-            .firstOrNull()
     }
 }

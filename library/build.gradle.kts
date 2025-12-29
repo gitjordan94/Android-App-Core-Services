@@ -21,7 +21,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.4.1\""
+            "\"1.4.2\""
         )
     }
 
