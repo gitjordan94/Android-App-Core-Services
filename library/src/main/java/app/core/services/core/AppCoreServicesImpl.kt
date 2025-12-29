@@ -124,10 +124,11 @@ internal class AppCoreServicesImpl(
     override fun setExternalUserId(externalUserId: String?) {
         Timber.d("Setting external user ID: $externalUserId.")
 
-        amplitudeAnalytics.setUserId(externalUserId)
-
         if (externalUserId != null) {
+            amplitudeAnalytics.setUserId(externalUserId)
             attributionServerClient?.setExternalUserId(externalUserId)
+        } else {
+            amplitudeAnalytics.reset()
         }
     }
 
