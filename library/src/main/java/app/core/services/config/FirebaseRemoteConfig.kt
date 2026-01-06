@@ -4,11 +4,11 @@ import app.core.services.config.model.RemoteConfigParameters
 import app.core.services.config.model.RemoteConfigParams
 import app.core.services.config.model.RemoteConfigValue
 import app.core.services.config.model.RemoteConfigValueImpl
-import app.core.services.core.model.Attribution
 import app.core.services.core.model.MediaSourceType
 import com.google.firebase.Firebase
 import com.google.firebase.remoteconfig.ConfigUpdate
 import com.google.firebase.remoteconfig.ConfigUpdateListener
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigException
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigValue
 import com.google.firebase.remoteconfig.get
@@ -18,11 +18,11 @@ import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 
 internal class FirebaseRemoteConfig(
-    private val defaults: RemoteConfigParameters
+    private val defaults: RemoteConfigParameters,
+    private val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig
 ) : RemoteConfig {
-    private val remoteConfig = Firebase.remoteConfig
 
-    internal var attribution: Attribution? = null
+    internal var remoteConfigMatchingContext: RemoteConfigMatchingContext? = null
 
     internal suspend fun activate(): Boolean {
         return try {
@@ -69,7 +69,7 @@ internal class FirebaseRemoteConfig(
 
     override fun getActivePaywallName(): String {
         return getString(
-            when (attribution?.mediaSource?.type) {
+            when (remoteConfigMatchingContext?.attribution?.mediaSource?.type) {
                 MediaSourceType.GOOGLE -> RemoteConfigParams.AB_PAYWALL_GOOGLE
                 MediaSourceType.FACEBOOK -> RemoteConfigParams.AB_PAYWALL_FACEBOOK
                 else -> RemoteConfigParams.AB_PAYWALL_GENERAL
@@ -102,7 +102,7 @@ internal class FirebaseRemoteConfig(
         return RemoteConfigValueImpl.from(
             key = key,
             value = value,
-            attribution = attribution,
+            data = remoteConfigMatchingContext,
             default = defaults.parameters[key]
         )
     }

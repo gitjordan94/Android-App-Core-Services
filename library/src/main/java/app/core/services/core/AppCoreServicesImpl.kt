@@ -29,6 +29,7 @@ import app.core.services.common.mapOfNotNull
 import app.core.services.common.measureExecutionTime
 import app.core.services.config.FirebaseRemoteConfig
 import app.core.services.config.RemoteConfig
+import app.core.services.config.RemoteConfigMatchingContext
 import app.core.services.config.model.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
 import app.core.services.config.model.RemoteConfigValue
 import app.core.services.core.model.Attribution
@@ -180,13 +181,18 @@ internal class AppCoreServicesImpl(
                     attributionServerClient?.install(it)
                 }
 
-                firebaseRemoteConfig.attribution = attribution
+                val remoteConfigMatchingContext =
+                    RemoteConfigMatchingContext(attribution, storeCountry)
+
+                firebaseRemoteConfig.remoteConfigMatchingContext = remoteConfigMatchingContext
+
+                val abTests = getAbTests(remoteConfigs, remoteConfigMatchingContext)
 
                 sendTestDistribution(
                     isFirstAppLaunch,
                     storeCountry,
                     attribution,
-                    remoteConfigs
+                    abTests
                 )
 
                 appUpdateManager.setMinSupportedVersionCode(
@@ -221,34 +227,46 @@ internal class AppCoreServicesImpl(
         }
     }
 
+    private fun getAbTests(
+        configs: Map<String, RemoteConfigValue>?,
+        matchingContext: RemoteConfigMatchingContext,
+    ): Map<String, String> {
+        if (configs.isNullOrEmpty()) {
+            return emptyMap()
+        }
+
+        val configsWithTarget = configs.filter {
+            configuration.remoteConfigParameters.parameters[it.key]?.target != null
+        }
+
+        Timber.d("Processing ${configsWithTarget.size} A/B tests")
+
+        val result = configsWithTarget.mapValues {
+            val shouldSend = configuration.remoteConfigParameters
+                .parameters[it.key]
+                ?.target?.matches(matchingContext)
+                ?: false
+
+            val rawValue = it.value.rawValue
+
+            when {
+                !shouldSend || rawValue.isNullOrBlank() -> "none"
+                rawValue.startsWith("none_") -> "none"
+                else -> rawValue
+            }
+        }
+
+        Timber.d("A/B tests result: ${result.filterValues { it != "none" }}")
+
+        return result
+    }
+
     private fun sendTestDistribution(
         isFirstAppLaunch: Boolean,
         storeCountry: String?,
         attribution: Attribution,
-        remoteConfigs: Map<String, RemoteConfigValue>?
+        abTests: Map<String, String>,
     ) {
-        val remoteConfigsProperties = remoteConfigs.orEmpty()
-            .filter {
-                val value = configuration.remoteConfigParameters.parameters[it.key]
-                value?.target != null
-            }
-            .mapValues {
-                val shouldSend = configuration.remoteConfigParameters
-                    .parameters[it.key]
-                    ?.target?.matches(attribution)
-                    ?: false
-
-                val value = it.value.rawValue
-
-                if (!shouldSend || value.isNullOrBlank()) {
-                    "none"
-                } else if (value.startsWith("none_")) {
-                    "none"
-                } else {
-                    value
-                }
-            }
-
         val attributionProperties = mapOfNotNull(
             "network" to attribution.mediaSource.value,
             "campaignName" to attribution.campaign,
@@ -257,14 +275,14 @@ internal class AppCoreServicesImpl(
             "deep_link_value" to attribution.deepLinkValue
         )
 
-        val eventProperties = attributionProperties + remoteConfigsProperties
+        val eventProperties = attributionProperties + abTests
 
         val userProperties = buildMap {
             if (isFirstAppLaunch && attributionProperties.isNotEmpty()) {
                 putAll(attributionProperties)
             }
 
-            putAll(remoteConfigsProperties)
+            putAll(abTests)
 
             put("store_country", storeCountry ?: "unknown")
 
