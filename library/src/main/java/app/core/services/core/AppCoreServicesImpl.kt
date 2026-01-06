@@ -205,6 +205,7 @@ internal class AppCoreServicesImpl(
                     activePaywall = activePaywallName,
                     attribution = attribution,
                     purchases = purchases,
+                    storeCountry = storeCountry,
                     isFirstLaunch = isFirstAppLaunch
                 )
 
