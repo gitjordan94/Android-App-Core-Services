@@ -1,4 +1,4 @@
-package app.core.services.analytics.amplitude.sessionreplay.compose
+package app.core.services.amplitude.sessionreplay.compose
 
 import androidx.compose.ui.Modifier
 import com.amplitude.android.sessionreplay.compose.ampMask

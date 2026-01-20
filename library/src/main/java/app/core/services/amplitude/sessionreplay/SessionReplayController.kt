@@ -1,4 +1,4 @@
-package app.core.services.analytics.amplitude.sessionreplay
+package app.core.services.amplitude.sessionreplay
 
 interface SessionReplayController {
     fun enableSessionReplay() {}

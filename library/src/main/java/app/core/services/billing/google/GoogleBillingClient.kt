@@ -53,7 +53,7 @@ internal class GoogleBillingClient @Inject constructor(
 ) : BillingClient {
 
     private companion object {
-        private const val TAG = "Purchases"
+        private const val TAG = "GoogleBillingClient"
         private const val RETRY_COUNT = 3
         private const val OPERATION_TIMEOUT_MS = 30_000L
         private const val CONNECTION_RETRY_DELAY_MS = 2_000L

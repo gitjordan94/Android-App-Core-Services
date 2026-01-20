@@ -1,20 +1,17 @@
-package app.core.services.analytics.amplitude
+package app.core.services.amplitude.analytics
 
 import android.content.Context
+import app.core.services.BuildConfig
+import app.core.services.amplitude.sessionreplay.SessionReplayConfig
+import app.core.services.analytics.Analytics
+import app.core.services.analytics.AnalyticsEvent
+import app.core.services.analytics.AnalyticsProperties
 import com.amplitude.android.Amplitude
 import com.amplitude.android.plugins.SessionReplayPlugin
 import com.amplitude.android.sessionreplay.config.MaskLevel
 import com.amplitude.android.sessionreplay.config.PrivacyConfig
 import com.amplitude.common.Logger
 import com.amplitude.core.events.Identify
-import app.core.services.BuildConfig
-import app.core.services.analytics.Analytics
-import app.core.services.analytics.AnalyticsEvent
-import app.core.services.analytics.amplitude.sessionreplay.SessionReplayConfig
-import app.core.services.core.AnalyticsEvents
-import app.core.services.core.AnalyticsProperties
-import app.core.services.billing.logger.PurchaseEventLogger
-import app.core.services.billing.model.Purchase
 import timber.log.Timber
 import java.util.Calendar
 
@@ -22,7 +19,7 @@ internal class AmplitudeAnalytics(
     context: Context,
     apiKey: String,
     sessionReplayConfig: SessionReplayConfig,
-) : Analytics, PurchaseEventLogger {
+) : Analytics {
     private val amplitude = Amplitude(apiKey, context) {
         flushIntervalMillis = 10_000
         flushEventsOnClose = true
@@ -71,20 +68,6 @@ internal class AmplitudeAnalytics(
 
     override fun logEvent(event: AnalyticsEvent) {
         logEvent(event.type, event.properties)
-    }
-
-    override fun logPurchase(purchase: Purchase) {
-        if (purchase.price.amountMicros == 0L) {
-            logEvent(AnalyticsEvents.TRIAL_STARTED)
-        } else {
-            logEvent(
-                event = AnalyticsEvents.PURCHASE, properties = mapOf(
-                    "productId" to purchase.product.id,
-                    "price" to purchase.price.amount,
-                    "currency" to purchase.price.currencyCode,
-                )
-            )
-        }
     }
 
     internal fun flush() {

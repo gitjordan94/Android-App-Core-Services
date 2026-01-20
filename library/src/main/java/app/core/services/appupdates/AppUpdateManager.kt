@@ -25,8 +25,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import app.core.services.config.FirebaseRemoteConfig
-import app.core.services.config.model.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
+import app.core.services.config.RemoteConfig
+import app.core.services.config.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
@@ -42,17 +42,11 @@ import kotlin.system.exitProcess
  */
 internal class AppUpdateManager(
     private val context: Context,
-    firebaseRemoteConfig: FirebaseRemoteConfig,
+    remoteConfig: RemoteConfig,
     private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(context),
     private val versionProvider: VersionProvider = AppVersionProvider(context),
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ) {
-
-    constructor(
-        context: Context,
-        firebaseRemoteConfig: FirebaseRemoteConfig
-    ) : this(context, firebaseRemoteConfig, AppUpdateManagerFactory.create(context))
-
     // State management
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Unknown)
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
@@ -70,17 +64,17 @@ internal class AppUpdateManager(
     private val activityLifecycleCallbacks = createActivityLifecycleCallbacks()
 
     init {
-        initialize(firebaseRemoteConfig)
+        initialize(remoteConfig)
     }
 
-    private fun initialize(firebaseRemoteConfig: FirebaseRemoteConfig) {
+    private fun initialize(remoteConfig: RemoteConfig) {
         if (!isInitialized.compareAndSet(false, true)) {
             Timber.w("AppUpdateManager already initialized")
             return
         }
 
         registerActivityCallbacks()
-        setupRemoteConfigListener(firebaseRemoteConfig)
+        setupRemoteConfigListener(remoteConfig)
 
         Timber.d("AppUpdateManager initialized successfully")
     }
@@ -90,20 +84,19 @@ internal class AppUpdateManager(
         application.registerActivityLifecycleCallbacks(activityLifecycleCallbacks)
     }
 
-    private fun setupRemoteConfigListener(firebaseRemoteConfig: FirebaseRemoteConfig) {
-        firebaseRemoteConfig.setOnOnConfigUpdateListener { updatedKeys ->
+    private fun setupRemoteConfigListener(remoteConfig: RemoteConfig) {
+        remoteConfig.setOnOnConfigUpdateListener { updatedKeys ->
             if (MIN_SUPPORTED_APP_VERSION in updatedKeys) {
-                handleRemoteConfigUpdate(firebaseRemoteConfig)
+                handleRemoteConfigUpdate(remoteConfig)
             }
         }
     }
 
-    private fun handleRemoteConfigUpdate(firebaseRemoteConfig: FirebaseRemoteConfig) {
+    private fun handleRemoteConfigUpdate(remoteConfig: RemoteConfig) {
         coroutineScope.launch {
             try {
-                firebaseRemoteConfig.activate()
-                val requiredVersion = firebaseRemoteConfig.getLong(MIN_SUPPORTED_APP_VERSION)
-                setMinSupportedVersionCode(requiredVersion)
+                val requiredVersion = remoteConfig.getLong(MIN_SUPPORTED_APP_VERSION)
+                setMinSupportedVersionCode(requiredVersion ?: 0L)
             } catch (e: Throwable) {
                 Timber.e(e, "Failed to handle remote config update")
                 _updateState.value = UpdateState.Error("Failed to process config update")

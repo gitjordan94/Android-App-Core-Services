@@ -1,7 +1,7 @@
 package app.core.services.config.model
 
 interface RemoteConfigValue {
-    val rawValue: String?
+    val value: String?
 
     /**
      * Gets the value as a `long`.
@@ -10,30 +10,14 @@ interface RemoteConfigValue {
      * @throws IllegalArgumentException If the value cannot be converted to a `long`.
      */
     @Throws(IllegalArgumentException::class)
-    fun asLong(): Long
-
-    /**
-     * Gets the value as a `double`.
-     *
-     * @return `double` representation of this parameter value.
-     * @throws IllegalArgumentException If the value cannot be converted to a `double`.
-     */
-    @Throws(IllegalArgumentException::class)
-    fun asDouble(): Double
+    fun asLong(): Long?
 
     /**
      * Gets the value as a `String`.
      *
      * @return `String` representation of this parameter value.
      */
-    fun asString(): String
-
-    /**
-     * Gets the value as a `byte[]`.
-     *
-     * @return `byte[]` representation of this parameter value.
-     */
-    fun asByteArray(): ByteArray
+    fun asString(): String?
 
     /**
      * Gets the value as a `boolean`.
@@ -42,5 +26,7 @@ interface RemoteConfigValue {
      * @throws IllegalArgumentException If the value cannot be converted to a `boolean`.
      */
     @Throws(IllegalArgumentException::class)
-    fun asBoolean(): Boolean
+    fun asBoolean(): Boolean?
+
+    val payload: Any?
 }

@@ -5,9 +5,6 @@ import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
 import app.core.services.appsflyer.error.AppsFlyerAttributionFailureException
 import app.core.services.appsflyer.error.AppsFlyerConversionFailureException
-import app.core.services.billing.logger.PurchaseEventLogger
-import app.core.services.billing.model.Purchase
-import com.appsflyer.AFInAppEventType
 import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +15,7 @@ internal class AppsFlyerAnalytics(
     devKey: String,
     private val applicationContext: Context,
     private val appsFlyer: AppsFlyerLib = AppsFlyerLib.getInstance()
-) : Analytics, PurchaseEventLogger {
+) : Analytics {
     private val _conversionDataFlow =
         MutableStateFlow<ConversionDataResult>(ConversionDataResult.Loading)
     internal val conversionDataFlow = _conversionDataFlow.asStateFlow()
@@ -82,14 +79,6 @@ internal class AppsFlyerAnalytics(
 
     override fun logEvent(event: AnalyticsEvent) {
         logEvent(event.type, event.properties)
-    }
-
-    override fun logPurchase(purchase: Purchase) {
-        if (purchase.price.amountMicros == 0L) {
-            logEvent(AFInAppEventType.START_TRIAL)
-        } else {
-            logEvent(AFInAppEventType.PURCHASE, mapOf("productId" to purchase.product.id))
-        }
     }
 
     internal fun setAdditionalData(data: Map<String, Any>) {

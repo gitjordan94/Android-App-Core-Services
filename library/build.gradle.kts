@@ -21,7 +21,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.4.3\""
+            "\"1.5.0\""
         )
     }
 
@@ -63,13 +63,19 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
     // Analytics
-    implementation("com.amplitude:analytics-android:1.22.4")
-    implementation("com.amplitude:plugin-session-replay-android:0.22.1")
+    implementation("com.amplitude:analytics-android:1.23.0")
+    implementation("com.amplitude:experiment-android-client:1.14.0")
+    implementation("com.amplitude:plugin-session-replay-android:0.23.1")
     api("com.appsflyer:af-android-sdk:6.17.5")
 
+    // Database
+    val roomVersion = "2.8.4"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+
     // Firebase
-    api(platform("com.google.firebase:firebase-bom:34.7.0"))
-    implementation("com.google.firebase:firebase-config")
+    api(platform("com.google.firebase:firebase-bom:34.8.0"))
     implementation("com.google.firebase:firebase-analytics")
 
     // ATT
