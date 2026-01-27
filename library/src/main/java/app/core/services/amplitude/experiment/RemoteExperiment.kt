@@ -4,9 +4,9 @@ internal interface RemoteExperiment {
     suspend fun fetch(
         userId: String?,
         userProperties: Map<String, Any?>?
-    ): Boolean
+    )
 
-    operator fun get(key: String): ExperimentVariant
+    fun getVariant(key: String, defaultValue: ExperimentVariant? = null): ExperimentVariant
 
     fun exposure(key: String)
 }

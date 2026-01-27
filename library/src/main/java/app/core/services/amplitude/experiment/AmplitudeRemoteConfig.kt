@@ -3,54 +3,48 @@ package app.core.services.amplitude.experiment
 import android.content.Context
 import app.core.services.amplitude.experiment.db.ExperimentDao
 import app.core.services.amplitude.experiment.db.ExperimentDatabase
-import app.core.services.amplitude.experiment.db.ExperimentEntity
-import app.core.services.config.InternalRemoteConfig
-import app.core.services.config.OnConfigUpdateListener
+import app.core.services.amplitude.experiment.util.toExperimentEntity
+import app.core.services.amplitude.experiment.util.toExperimentVariant
+import app.core.services.config.RemoteConfig
 import app.core.services.config.RemoteConfigParameters
 import app.core.services.config.model.RemoteConfigValue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 
 internal class AmplitudeRemoteConfig(
     private val remoteExperiment: RemoteExperiment,
     private val experimentDao: ExperimentDao,
-    private val params: RemoteConfigParameters,
+    private val remoteConfigParameters: RemoteConfigParameters,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) : InternalRemoteConfig {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    private val persistenceScope = CoroutineScope(SupervisorJob() + ioDispatcher)
-
-    private val cache = ConcurrentHashMap<String, ExperimentVariant>()
+) : RemoteConfig {
+    private val keyLocks = ConcurrentHashMap<String, Any>()
+    private val memoryCache = ConcurrentHashMap<String, ExperimentVariant>()
+    private val ioScope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     init {
-        observeExperimentsAndCache()
+        observeAndCacheExperiments()
     }
 
     override suspend fun fetch(
         userId: String?,
         userProperties: Map<String, Any?>?
     ): Boolean {
-        Timber.d("Fetching remote config for userId=$userId")
+        Timber.d("\uD83D\uDCE1 Fetching remote config | userId=$userId")
         return try {
-            val result = remoteExperiment.fetch(userId, userProperties)
-            if (result) {
-                Timber.d("Remote config fetched successfully")
-            } else {
-                Timber.w("Remote config fetch returned false")
-            }
-            result
+            remoteExperiment.fetch(userId, userProperties)
+            Timber.d("✅ Remote config fetch successful | userId=$userId")
+            true
         } catch (e: Throwable) {
-            Timber.e(e, "Failed to fetch remote config")
+            Timber.e(e, "❌ Remote config fetch failed | userId=$userId")
             false
         }
     }
@@ -66,61 +60,97 @@ internal class AmplitudeRemoteConfig(
 
     override fun getString(key: String) = get(key).value
 
-    override fun getPayload(key: String) = get(key).payload
+    override fun getPayload(key: String) = get(key).payload()
 
-    override fun setOnOnConfigUpdateListener(onConfigUpdateListener: OnConfigUpdateListener) {
-        // do nothing
-    }
-
-    private fun observeExperimentsAndCache() {
+    private fun observeAndCacheExperiments() {
         experimentDao.getExperiments()
             .flowOn(ioDispatcher)
             .onEach { entities ->
                 entities.forEach { entity ->
-                    cache.putIfAbsent(entity.key, entity.toExperimentVariant())
+                    memoryCache[entity.key] = entity.toExperimentVariant()
                 }
+
+                Timber.d("\uD83D\uDCBE Loaded experiments from DB | count=${entities.size}")
             }
-            .launchIn(persistenceScope)
+            .catch { throwable ->
+                Timber.e(throwable, "❌ Failed to observe experiments from database")
+            }
+            .launchIn(ioScope)
     }
 
     private fun getVariant(key: String): ExperimentVariant {
-        val cachedVariant = cache[key]
-        val isStickyBucketed = params.parameters[key]?.isStickyBucketed == true
+        getStickyVariant(key, memoryCache[key])?.let { return it }
 
-        if (isStickyBucketed && cachedVariant != null) {
-            Timber.d("Returning cached variant for $key: $cachedVariant")
-            return cachedVariant
+        val lock = keyLocks.getOrPut(key, ::Any)
+
+        return try {
+            synchronized(lock) {
+                val cachedVariant = memoryCache[key]
+
+                getStickyVariant(key, cachedVariant)?.let { return@synchronized it }
+
+                val default = remoteConfigParameters.defaults[key]?.toExperimentVariant()
+                    ?: cachedVariant
+
+                val remoteVariant = remoteExperiment.getVariant(key, default)
+                val variantChanged = cachedVariant == null || cachedVariant != remoteVariant
+
+                if (variantChanged) {
+                    logVariantChange(
+                        key = key,
+                        oldVariant = cachedVariant,
+                        newVariant = remoteVariant
+                    )
+
+                    storeExperiment(key, remoteVariant)
+                    memoryCache[key] = remoteVariant
+                    remoteExperiment.exposure(key)
+                    remoteVariant
+                } else {
+                    Timber.d("♻\uFE0F Using unchanged variant | key=$key, value=${cachedVariant.value}")
+                    cachedVariant
+                }
+            }
+        } finally {
+            keyLocks.remove(key, lock)
         }
+    }
 
-        val remoteVariant = remoteExperiment[key]
-        Timber.d("Remote variant for $key: $remoteVariant")
-
-        val variantChanged = cachedVariant == null || cachedVariant != remoteVariant
-
-        if (variantChanged) {
-            Timber.d("Variant for $key changed. Old value: $cachedVariant, new value: $remoteVariant")
-            storeExperiment(key, remoteVariant)
-            cache[key] = remoteVariant
-            remoteExperiment.exposure(key)
-
-            return remoteVariant
+    private fun getStickyVariant(key: String, variant: ExperimentVariant?): ExperimentVariant? {
+        val isSticky = remoteConfigParameters.defaults[key]?.isStickyBucketed == true
+        if (variant != null && isSticky) {
+            Timber.d("📍 Using sticky cached variant | key=$key, value=${variant.value}")
+            return variant
         }
+        return null
+    }
 
-        return cachedVariant
+    private fun logVariantChange(
+        key: String,
+        oldVariant: ExperimentVariant?,
+        newVariant: ExperimentVariant
+    ) {
+        val message = buildString {
+            fun format(variant: ExperimentVariant?): String {
+                if (variant == null) return "null"
+                val payload = variant.payloadJson?.take(100) // Truncate for readability
+                return "${variant.value} | $payload"
+            }
+
+            append("🔄 Variant changed | key=$key")
+            append("\n   ├─ old: ${format(oldVariant)}")
+            append("\n   └─ new: ${format(newVariant)}")
+        }
+        Timber.d(message)
     }
 
     private fun storeExperiment(key: String, variant: ExperimentVariant) {
-        persistenceScope.launch {
+        ioScope.launch {
             try {
-                experimentDao.insert(
-                    ExperimentEntity(
-                        key = key,
-                        value = variant.value,
-                        payload = variant.payload?.let(json::encodeToString),
-                    )
-                )
+                experimentDao.insert(variant.toExperimentEntity())
+                Timber.d("\uD83D\uDCBE Saved experiment to DB | key=$key, value=${variant.value}")
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to save experiment $key")
+                Timber.e(t, "❌ Failed to save experiment | key=$key")
             }
         }
     }
@@ -128,17 +158,20 @@ internal class AmplitudeRemoteConfig(
     internal companion object {
         internal fun create(
             applicationContext: Context,
-            apiKey: String,
-            params: RemoteConfigParameters
-        ): InternalRemoteConfig {
+            remoteConfigParameters: RemoteConfigParameters
+        ): RemoteConfig {
             val database = ExperimentDatabase.create(applicationContext)
             val experimentDao = database.experiments
-            val amplitudeExperiment = AmplitudeRemoteExperiment.create(apiKey, applicationContext)
+
+            val amplitudeExperiment = AmplitudeRemoteExperiment.create(
+                apiKey = remoteConfigParameters.amplitudeDeploymentKey,
+                applicationContext = applicationContext
+            )
 
             return AmplitudeRemoteConfig(
                 remoteExperiment = amplitudeExperiment,
                 experimentDao = experimentDao,
-                params = params
+                remoteConfigParameters = remoteConfigParameters
             )
         }
     }

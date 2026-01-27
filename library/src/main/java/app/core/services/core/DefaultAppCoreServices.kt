@@ -16,7 +16,7 @@ import app.core.services.attribution.AttributionServerClient
 import app.core.services.billing.BillingClient
 import app.core.services.common.isSystemInDarkTheme
 import app.core.services.common.measureExecutionTime
-import app.core.services.config.InternalRemoteConfig
+import app.core.services.config.RemoteConfig
 import app.core.services.config.RemoteConfigParams
 import app.core.services.core.model.Attribution
 import app.core.services.core.model.ConfigurationResult
@@ -46,7 +46,7 @@ internal class DefaultAppCoreServices(
     override val analytics: Analytics = compositeAnalytics,
     override val billingClient: BillingClient,
     override val deepLinkManager: DeepLinkManager,
-    override val remoteConfig: InternalRemoteConfig,
+    override val remoteConfig: RemoteConfig,
     private val firebaseAnalytics: FirebaseAnalytics,
     private val appUpdateManager: AppUpdateManager,
     private val amplitudeAnalytics: AmplitudeAnalytics,

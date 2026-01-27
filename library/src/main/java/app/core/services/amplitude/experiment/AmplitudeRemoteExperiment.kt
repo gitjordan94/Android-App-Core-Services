@@ -3,6 +3,7 @@ package app.core.services.amplitude.experiment
 import android.app.Application
 import android.content.Context
 import app.core.services.BuildConfig
+import app.core.services.amplitude.experiment.util.toAmplitudeVariant
 import com.amplitude.experiment.Experiment.initializeWithAmplitudeAnalytics
 import com.amplitude.experiment.ExperimentClient
 import com.amplitude.experiment.ExperimentConfig
@@ -21,7 +22,7 @@ internal class AmplitudeRemoteExperiment(
     override suspend fun fetch(
         userId: String?,
         userProperties: Map<String, Any?>?
-    ): Boolean {
+    ) {
         Timber.d("Fetching remote config")
 
         return withContext(ioDispatcher) {
@@ -32,18 +33,17 @@ internal class AmplitudeRemoteExperiment(
                     .build()
 
                 experiment.fetch(experimentUser).get(5, TimeUnit.SECONDS)
-                true
             } catch (e: Throwable) {
                 Timber.e(e, "Failed to fetch remote config")
-                false
+                throw e
             }
         }
     }
 
-    override operator fun get(key: String): ExperimentVariant {
-        val variant = experiment.variant(key)
+    override fun getVariant(key: String, defaultValue: ExperimentVariant?): ExperimentVariant {
+        val variant = experiment.variant(key, defaultValue?.toAmplitudeVariant())
         Timber.d("Variant for $key: $variant")
-        return ExperimentVariant(key, value = variant.value, payload = variant.payload)
+        return ExperimentVariant(key, variant.value, variant.payload?.toString())
     }
 
     override fun exposure(key: String) {

@@ -3,5 +3,5 @@ package app.core.services.amplitude.experiment
 internal data class ExperimentVariant(
     val key: String,
     val value: String?,
-    val payload: Any?,
+    val payloadJson: String?,
 )

@@ -2,17 +2,19 @@ package app.core.services.config
 
 import app.core.services.config.model.RemoteConfigParameter
 
-class RemoteConfigParameters {
-    private val _parameters = mutableMapOf<String, RemoteConfigParameter>()
-    internal val parameters: Map<String, RemoteConfigParameter> = _parameters
+class RemoteConfigParameters(
+    internal val amplitudeDeploymentKey: String
+) {
+    private val _defaults = mutableMapOf<String, RemoteConfigParameter>()
+    internal val defaults: Map<String, RemoteConfigParameter> = _defaults
 
     fun param(
         key: String,
         defaultValue: String? = null,
-        defaultPayload: Map<String, Any?>? = null,
+        defaultPayload: String? = null,
         isStickyBucketed: Boolean = false
     ): RemoteConfigParameters {
-        _parameters[key] = RemoteConfigParameter(
+        _defaults[key] = RemoteConfigParameter(
             key,
             defaultValue,
             defaultPayload,

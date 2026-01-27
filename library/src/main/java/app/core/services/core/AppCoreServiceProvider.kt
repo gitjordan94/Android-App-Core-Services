@@ -49,9 +49,8 @@ internal object AppCoreServiceProvider {
         )
 
         val remoteConfig = AmplitudeRemoteConfig.create(
-            apiKey = configuration.amplitudeDeploymentKey,
             applicationContext = configuration.context,
-            params = configuration.remoteConfigParameters
+            remoteConfigParameters = configuration.remoteConfigParameters
         )
 
         val preferenceDataStore = PreferenceDataStoreFactory.create {
@@ -108,7 +107,7 @@ internal object AppCoreServiceProvider {
                     appsFlyerAnalytics
                 )
             ),
-            appUpdateManager = AppUpdateManager(configuration.context, remoteConfig),
+            appUpdateManager = AppUpdateManager(configuration.context),
             remoteConfig = remoteConfig,
             billingClient = billingClient,
             preferencesDataStore = preferencesDataStore,

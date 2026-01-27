@@ -25,8 +25,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import app.core.services.config.RemoteConfig
-import app.core.services.config.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
@@ -42,7 +40,6 @@ import kotlin.system.exitProcess
  */
 internal class AppUpdateManager(
     private val context: Context,
-    remoteConfig: RemoteConfig,
     private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(context),
     private val versionProvider: VersionProvider = AppVersionProvider(context),
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,44 +61,22 @@ internal class AppUpdateManager(
     private val activityLifecycleCallbacks = createActivityLifecycleCallbacks()
 
     init {
-        initialize(remoteConfig)
+        initialize()
     }
 
-    private fun initialize(remoteConfig: RemoteConfig) {
+    private fun initialize() {
         if (!isInitialized.compareAndSet(false, true)) {
             Timber.w("AppUpdateManager already initialized")
             return
         }
 
         registerActivityCallbacks()
-        setupRemoteConfigListener(remoteConfig)
-
         Timber.d("AppUpdateManager initialized successfully")
     }
 
     private fun registerActivityCallbacks() {
         val application = context.applicationContext as Application
         application.registerActivityLifecycleCallbacks(activityLifecycleCallbacks)
-    }
-
-    private fun setupRemoteConfigListener(remoteConfig: RemoteConfig) {
-        remoteConfig.setOnOnConfigUpdateListener { updatedKeys ->
-            if (MIN_SUPPORTED_APP_VERSION in updatedKeys) {
-                handleRemoteConfigUpdate(remoteConfig)
-            }
-        }
-    }
-
-    private fun handleRemoteConfigUpdate(remoteConfig: RemoteConfig) {
-        coroutineScope.launch {
-            try {
-                val requiredVersion = remoteConfig.getLong(MIN_SUPPORTED_APP_VERSION)
-                setMinSupportedVersionCode(requiredVersion ?: 0L)
-            } catch (e: Throwable) {
-                Timber.e(e, "Failed to handle remote config update")
-                _updateState.value = UpdateState.Error("Failed to process config update")
-            }
-        }
     }
 
     /**

@@ -1,32 +1,37 @@
 package app.core.services.config.model
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 interface RemoteConfigValue {
     val value: String?
 
-    /**
-     * Gets the value as a `long`.
-     *
-     * @return `long` representation of this parameter value.
-     * @throws IllegalArgumentException If the value cannot be converted to a `long`.
-     */
+    val payloadJson: String?
+
     @Throws(IllegalArgumentException::class)
     fun asLong(): Long?
 
-    /**
-     * Gets the value as a `String`.
-     *
-     * @return `String` representation of this parameter value.
-     */
-    fun asString(): String?
-
-    /**
-     * Gets the value as a `boolean`.
-     *
-     * @return `boolean` representation of this parameter value.
-     * @throws IllegalArgumentException If the value cannot be converted to a `boolean`.
-     */
     @Throws(IllegalArgumentException::class)
     fun asBoolean(): Boolean?
 
-    val payload: Any?
+    @Throws(IllegalArgumentException::class)
+    fun payload(): Any?
+
+    @Throws(IllegalArgumentException::class)
+    fun payloadAsInt(): Int?
+
+    @Throws(IllegalArgumentException::class)
+    fun payloadAsLong(): Long?
+
+    @Throws(IllegalArgumentException::class)
+    fun payloadAsBoolean(): Boolean?
+
+    @Throws(IllegalArgumentException::class)
+    fun payloadAsString(): String?
+
+    @Throws(IllegalArgumentException::class)
+    fun payloadAsJsonObject(): JSONObject?
+
+    @Throws(IllegalArgumentException::class)
+    fun payloadAsJsonArray(): JSONArray?
 }
