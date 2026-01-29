@@ -1,13 +1,12 @@
 package app.core.services.analytics.firebase
 
-import com.google.firebase.Firebase
-import com.google.firebase.analytics.analytics
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
 import app.core.services.analytics.PurchaseEventLogger
-import app.core.services.common.toBundle
-import app.core.services.core.AnalyticsEvents
 import app.core.services.billing.model.Purchase
+import app.core.services.common.toBundle
+import com.google.firebase.Firebase
+import com.google.firebase.analytics.analytics
 import kotlinx.coroutines.tasks.await
 
 internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
@@ -30,9 +29,7 @@ internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
     }
 
     override fun logPurchase(purchase: Purchase) {
-        if (purchase.price.amountMicros == 0L) {
-            logEvent(AnalyticsEvents.TRIAL_STARTED)
-        } else {
+        if (purchase.price.amountMicros > 0L) {
             logEvent(
                 event = "in_app_purchased",
                 properties = mapOf(

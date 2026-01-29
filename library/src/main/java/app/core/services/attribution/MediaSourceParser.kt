@@ -22,6 +22,9 @@ internal object DefaultMediaSourceParser : MediaSourceParser {
             "fb" to MediaSourceType.FACEBOOK,
             "instagram" to MediaSourceType.FACEBOOK,
             "ig" to MediaSourceType.FACEBOOK,
+            "tiktok" to MediaSourceType.TIKTOK,
+            "tiktokglobal_int" to MediaSourceType.TIKTOK,
+            "bytedanceglobal_int" to MediaSourceType.TIKTOK,
         )
 
         val mediaSourceType = sources.entries

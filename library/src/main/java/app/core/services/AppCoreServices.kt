@@ -9,7 +9,7 @@ import app.core.services.billing.BillingClient
 import app.core.services.billing.BillingConfig
 import app.core.services.config.RemoteConfig
 import app.core.services.config.model.RemoteConfigParameters
-import app.core.services.core.AppCoreServicesImpl
+import app.core.services.core.AppCoreServiceProvider
 import app.core.services.core.model.ConfigurationResult
 import app.core.services.deeplink.DeepLinkManager
 
@@ -124,7 +124,7 @@ interface AppCoreServices {
         @JvmStatic
         fun configure(configuration: Configuration): AppCoreServices {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: AppCoreServicesImpl.create(configuration).also { INSTANCE = it }
+                INSTANCE ?: AppCoreServiceProvider.create(configuration).also { INSTANCE = it }
             }
         }
     }

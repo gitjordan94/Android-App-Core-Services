@@ -10,9 +10,8 @@ import kotlinx.coroutines.flow.onEach
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.analytics.amplitude.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
-import app.core.services.core.AnalyticsEvents.PURCHASE_ERROR
-import app.core.services.core.AnalyticsProperties.ACTIVE_SUBS
-import app.core.services.core.AnalyticsProperties.ALL_PURCHASED_PRODUCT_IDS
+import app.core.services.analytics.AnalyticsProperties.ACTIVE_SUBS
+import app.core.services.analytics.AnalyticsProperties.ALL_PURCHASED_PRODUCT_IDS
 import app.core.services.billing.model.Purchases
 import app.core.services.billing.model.Purchase
 
@@ -53,21 +52,12 @@ internal class AnalyticsBillingClientDecorator(
     ): Purchase {
         appsFlyerAnalytics.logEvent(INITIATED_CHECKOUT)
 
-        return try {
-            val purchase = purchaseBlock()
+        val purchase = purchaseBlock()
 
-            appsFlyerAnalytics.logPurchase(purchase)
-            amplitudeAnalytics.logPurchase(purchase)
-            firebaseAnalytics.logPurchase(purchase)
+        appsFlyerAnalytics.logPurchase(purchase)
+        firebaseAnalytics.logPurchase(purchase)
 
-            purchase
-        } catch (exception: BillingClientException) {
-            if (exception.error != BillingError.PurchaseCancelledError) {
-                amplitudeAnalytics.logEvent(PURCHASE_ERROR)
-            }
-
-            throw exception
-        }
+        return purchase
     }
 
     private fun setUserProperties(purchases: Purchases?) {
