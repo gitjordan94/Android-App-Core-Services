@@ -1,9 +1,8 @@
 package app.core.services.config.model
 
-import app.core.services.core.model.Attribution
+import app.core.services.config.RemoteConfigMatchingContext
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig.VALUE_SOURCE_STATIC
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigValue
-import app.core.services.core.model.MediaSource
 import timber.log.Timber
 import java.util.regex.Pattern
 
@@ -125,7 +124,7 @@ internal class RemoteConfigValueImpl internal constructor(
         fun from(
             key: String,
             value: FirebaseRemoteConfigValue,
-            attribution: Attribution?,
+            data: RemoteConfigMatchingContext?,
             default: RemoteConfigParameter?
         ): RemoteConfigValue {
             val rawValue = try {
@@ -140,7 +139,7 @@ internal class RemoteConfigValueImpl internal constructor(
                 key = key,
                 value = rawValue.orEmpty(),
                 source = value.source,
-                attribution = attribution,
+                data = data,
                 default = default
             )
         }
@@ -149,10 +148,10 @@ internal class RemoteConfigValueImpl internal constructor(
             key: String,
             value: String,
             source: Int,
-            attribution: Attribution?,
+            data: RemoteConfigMatchingContext?,
             default: RemoteConfigParameter?
         ): RemoteConfigValue {
-            val value = default?.getValue(value, attribution)
+            val value = default?.getValue(value, data)
                 ?: when {
                     value.contains("none_") -> value.drop(5)
                     value == "none" -> ""

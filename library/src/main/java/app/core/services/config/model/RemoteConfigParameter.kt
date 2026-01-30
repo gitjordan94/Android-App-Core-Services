@@ -1,15 +1,15 @@
 package app.core.services.config.model
 
+import app.core.services.config.RemoteConfigMatchingContext
 import app.core.services.config.RemoteConfigTarget
-import app.core.services.core.model.Attribution
 
 internal class RemoteConfigParameter(
     val key: String,
     val defaultValue: String,
     val target: RemoteConfigTarget? = null,
 ) {
-    fun getValue(remoteValue: String, attribution: Attribution?): String {
-        val value = if (target == null || attribution == null || target.matches(attribution)) {
+    fun getValue(remoteValue: String, data: RemoteConfigMatchingContext?): String {
+        val value = if (target == null || data == null || target.matches(data)) {
             remoteValue
         } else {
             defaultValue

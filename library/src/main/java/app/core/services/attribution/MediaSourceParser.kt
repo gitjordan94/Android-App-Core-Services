@@ -22,12 +22,15 @@ internal object DefaultMediaSourceParser : MediaSourceParser {
             "fb" to MediaSourceType.FACEBOOK,
             "instagram" to MediaSourceType.FACEBOOK,
             "ig" to MediaSourceType.FACEBOOK,
+            "tiktok" to MediaSourceType.TIKTOK,
+            "tiktokglobal_int" to MediaSourceType.TIKTOK,
+            "bytedanceglobal_int" to MediaSourceType.TIKTOK,
         )
 
         val mediaSourceType = sources.entries
-            .firstOrNull { normalizedRaw.contains(it.key) }?.value
-
-        if (mediaSourceType == null) return MediaSource()
+            .firstOrNull { normalizedRaw.contains(it.key) }
+            ?.value
+            ?: MediaSourceType.UNKNOWN
 
         return MediaSource(value = raw, type = mediaSourceType)
     }
