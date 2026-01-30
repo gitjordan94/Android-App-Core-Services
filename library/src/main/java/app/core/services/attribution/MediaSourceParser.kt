@@ -28,9 +28,9 @@ internal object DefaultMediaSourceParser : MediaSourceParser {
         )
 
         val mediaSourceType = sources.entries
-            .firstOrNull { normalizedRaw.contains(it.key) }?.value
-
-        if (mediaSourceType == null) return MediaSource()
+            .firstOrNull { normalizedRaw.contains(it.key) }
+            ?.value
+            ?: MediaSourceType.UNKNOWN
 
         return MediaSource(value = raw, type = mediaSourceType)
     }

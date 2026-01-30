@@ -27,18 +27,36 @@ class RemoteConfigParameters {
         setMinimalSupportedAppVersion(0)
     }
 
-    fun setSubsScreenStyleFull(value: Boolean) = param(SUBS_SCREEN_STYLE_FULL, value)
+    fun setSubsScreenStyleFull(
+        value: Boolean,
+        target: RemoteConfigTarget? = null
+    ) = param(SUBS_SCREEN_STYLE_FULL, value, target)
 
-    fun setSubsScreenStyleHard(value: Boolean) = param(SUBS_SCREEN_STYLE_HARD, value)
+    fun setSubsScreenStyleHard(
+        value: Boolean,
+        target: RemoteConfigTarget? = null
+    ) = param(SUBS_SCREEN_STYLE_HARD, value, target)
 
-    fun setShowPrimaryRateUs(value: Boolean) = param(RATE_US_PRIMARY_SHOWN, value)
+    fun setShowPrimaryRateUs(
+        value: Boolean,
+        target: RemoteConfigTarget? = null
+    ) = param(RATE_US_PRIMARY_SHOWN, value, target)
 
-    fun setShowSecondaryRateUs(value: Boolean) = param(RATE_US_SECONDARY_SHOWN, value)
+    fun setShowSecondaryRateUs(
+        value: Boolean,
+        target: RemoteConfigTarget? = null
+    ) = param(RATE_US_SECONDARY_SHOWN, value, target)
 
-    fun setGeneralPaywall(value: String) = param(
+    fun setGeneralPaywall(
+        value: String,
+        target: RemoteConfigTarget = RemoteConfigTarget.sources(
+            MediaSourceType.ORGANIC,
+            MediaSourceType.UNKNOWN
+        )
+    ) = param(
         key = AB_PAYWALL_GENERAL,
         value = value,
-        target = RemoteConfigTarget.sources(MediaSourceType.ORGANIC)
+        target = target
     )
 
     fun setFacebookPaywall(value: String) = param(
