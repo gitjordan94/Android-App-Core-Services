@@ -13,5 +13,6 @@ data class AttributionInstallRequestBody(
     @SerialName("appsflyerId") val appsflyerId: String,
     @SerialName("storeCountry") val storeCountry: String,
     @SerialName("environment") val environment: String,
+    @SerialName("deviceId") val deviceId: String,
     @SerialName("externalAuthorization") val externalAuthorization: Boolean,
 )

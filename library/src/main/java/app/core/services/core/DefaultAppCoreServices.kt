@@ -13,6 +13,7 @@ import app.core.services.appsflyer.ConversionDataResult
 import app.core.services.appupdates.AppUpdateManager
 import app.core.services.attribution.AttributionProvider
 import app.core.services.attribution.AttributionServerClient
+import app.core.services.attribution.DeviceIdProvider
 import app.core.services.billing.BillingClient
 import app.core.services.billing.model.Purchases
 import app.core.services.common.isSystemInDarkTheme
@@ -60,6 +61,7 @@ internal class DefaultAppCoreServices(
     private val coroutineDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val attributionProvider: AttributionProvider,
     private val deviceInfoProvider: DeviceInfoProvider,
+    private val deviceIdProvider: DeviceIdProvider,
 ) : AppCoreServices {
     private val applicationScope = CoroutineScope(SupervisorJob() + coroutineDispatcher)
 
@@ -126,6 +128,14 @@ internal class DefaultAppCoreServices(
 
                 val deviceInfo = async("Device Info") {
                     deviceInfoProvider.collectDeviceInfo()
+                }
+
+                async("Device Id") {
+                    if (attributionServerClient != null) {
+                        if (attributionServerClient.getInstallUserId() == null) {
+                            amplitudeAnalytics.setDeviceId(deviceIdProvider.provide())
+                        }
+                    }
                 }
 
                 if (isFirstAppLaunch) {

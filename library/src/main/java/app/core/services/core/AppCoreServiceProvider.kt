@@ -9,6 +9,7 @@ import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.attribution.AppsFlyerAttributionProvider
 import app.core.services.appupdates.AppUpdateManager
+import app.core.services.attribution.AppsflyerDeviceIdProvider
 import app.core.services.attribution.AttributionServerClient
 import app.core.services.attribution.CompositeAttributionProvider
 import app.core.services.attribution.GooglePlayInstallReferrerAttributionProvider
@@ -58,12 +59,15 @@ internal object AppCoreServiceProvider {
 
         val keyValueStorage = KeyValueStorageImpl(preferenceDataStore)
 
+        val deviceIdProvider = AppsflyerDeviceIdProvider(appsFlyerAnalytics)
+
         val attributionServerClient = if (configuration.attributionServerConfig != null) {
             AttributionServerClient.create(
                 applicationContext = configuration.context,
                 attributionServerConfig = configuration.attributionServerConfig,
                 billingStoreCountryProvider = GoogleBillingStoreCountryProvider(billingClient),
-                keyValueStorage = keyValueStorage
+                keyValueStorage = keyValueStorage,
+                deviceIdProvider = deviceIdProvider
             )
         } else {
             null
@@ -109,7 +113,8 @@ internal object AppCoreServiceProvider {
             billingClient = billingClient,
             preferencesDataStore = preferencesDataStore,
             deepLinkManager = AppsFlyerDeepLinkManager(),
-            deviceInfoProvider = DeviceInfoProviderFactory.create(configuration.context)
+            deviceInfoProvider = DeviceInfoProviderFactory.create(configuration.context),
+            deviceIdProvider = deviceIdProvider
         )
     }
 
