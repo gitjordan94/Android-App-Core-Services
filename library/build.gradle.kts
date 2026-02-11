@@ -43,7 +43,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
     // Compose
-    implementation("androidx.compose.ui:ui:1.10.2")
+    implementation("androidx.compose.ui:ui:1.10.3")
 
     // Lifecycle
     val lifecycleVersion = "2.10.0"
@@ -63,12 +63,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
     // Analytics
-    implementation("com.amplitude:analytics-android:1.23.1")
-    implementation("com.amplitude:plugin-session-replay-android:0.23.2")
+    implementation("com.amplitude:analytics-android:1.25.1")
+    implementation("com.amplitude:plugin-session-replay-android:0.24.1")
     api("com.appsflyer:af-android-sdk:6.17.5")
 
     // Firebase
-    api(platform("com.google.firebase:firebase-bom:34.8.0"))
+    api(platform("com.google.firebase:firebase-bom:34.9.0"))
     implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
 

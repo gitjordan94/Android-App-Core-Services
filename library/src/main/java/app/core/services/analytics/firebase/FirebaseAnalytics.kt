@@ -2,6 +2,7 @@ package app.core.services.analytics.firebase
 
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
+import app.core.services.analytics.AnalyticsEvents
 import app.core.services.analytics.PurchaseEventLogger
 import app.core.services.billing.model.Purchase
 import app.core.services.common.toBundle
@@ -29,7 +30,9 @@ internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
     }
 
     override fun logPurchase(purchase: Purchase) {
-        if (purchase.price.amountMicros > 0L) {
+        if (purchase.price.amountMicros == 0L) {
+            logEvent(AnalyticsEvents.TRIAL_STARTED)
+        } else {
             logEvent(
                 event = "in_app_purchased",
                 properties = mapOf(

@@ -38,10 +38,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
@@ -82,12 +82,27 @@ internal class DefaultAppCoreServices(
         }
 
         appsFlyerAnalytics.conversionDataFlow
-            .filterNot { it is ConversionDataResult.Loading }
+            .filterNotNull()
             .distinctUntilChanged()
-            .drop(1)
             .onEach { result ->
-                val data = (result as? ConversionDataResult.Success)?.data
-                analytics.logEvent("AF_CONVERSION_DATA_UPDATED", data)
+                when (result) {
+                    is ConversionDataResult.Success -> {
+                        analytics.logEvent(
+                            AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS,
+                            properties = result.data.orEmpty() + mapOf("appsflyer_uid" to appsFlyerUID)
+                        )
+                    }
+
+                    is ConversionDataResult.Fail -> {
+                        analytics.logEvent(
+                            AnalyticsEvents.AF_CONVERSION_DATA_FAIL,
+                            properties = mapOf(
+                                "appsflyer_uid" to appsFlyerUID,
+                                "error" to result.errorMessage
+                            )
+                        )
+                    }
+                }
             }
             .launchIn(applicationScope)
     }
@@ -130,7 +145,7 @@ internal class DefaultAppCoreServices(
                     deviceInfoProvider.collectDeviceInfo()
                 }
 
-                async("Device Id") {
+                launch {
                     if (attributionServerClient != null) {
                         if (attributionServerClient.getInstallUserId() == null) {
                             amplitudeAnalytics.setDeviceId(deviceIdProvider.provide())
