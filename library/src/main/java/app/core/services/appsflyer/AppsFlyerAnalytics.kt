@@ -10,17 +10,17 @@ import app.core.services.billing.model.Purchase
 import com.appsflyer.AFInAppEventType
 import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
+import com.appsflyer.attribution.AppsFlyerRequestListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 internal class AppsFlyerAnalytics(
-    devKey: String,
+    private val devKey: String,
     private val applicationContext: Context,
-    private val appsFlyer: AppsFlyerLib = AppsFlyerLib.getInstance()
+    private val appsFlyer: AppsFlyerLib,
 ) : Analytics, PurchaseEventLogger {
-    private val _conversionDataFlow =
-        MutableStateFlow<ConversionDataResult>(ConversionDataResult.Loading)
+    private val _conversionDataFlow = MutableStateFlow<ConversionDataResult?>(null)
     internal val conversionDataFlow = _conversionDataFlow.asStateFlow()
 
     internal var appsFlyerUID: String? = null
@@ -48,7 +48,7 @@ internal class AppsFlyerAnalytics(
                         "AppsFlyer conversion data fail: $errorMessage."
                     )
 
-                    _conversionDataFlow.value = ConversionDataResult.Error(errorMessage)
+                    _conversionDataFlow.value = ConversionDataResult.Fail(errorMessage)
                 }
 
                 override fun onAppOpenAttribution(attributionData: MutableMap<String, String>?) {
@@ -69,7 +69,21 @@ internal class AppsFlyerAnalytics(
     }
 
     internal fun start() {
-        appsFlyer.start(applicationContext)
+        Timber.d("Starting AppsFlyer.")
+
+        appsFlyer.start(
+            applicationContext,
+            devKey,
+            object : AppsFlyerRequestListener {
+                override fun onSuccess() {
+                    Timber.d("AppsFlyer start success.")
+                }
+
+                override fun onError(code: Int, error: String) {
+                    Timber.e("AppsFlyer start error: $error.")
+                }
+            }
+        )
     }
 
     override fun setUserProperties(properties: Map<String, Any?>?) {

@@ -28,10 +28,13 @@ internal interface AttributionServerClient {
 
     fun setExternalUserId(externalUserId: String)
 
+    suspend fun getInstallUserId(): String?
+
     companion object {
         fun create(
             applicationContext: Context,
             attributionServerConfig: AttributionServerConfig,
+            deviceIdProvider: DeviceIdProvider,
             billingStoreCountryProvider: BillingStoreCountryProvider,
             keyValueStorage: KeyValueStorage,
         ): AttributionServerClient {
@@ -44,7 +47,8 @@ internal interface AttributionServerClient {
                     attributionServerConfig.serverUrl
                 ),
                 billingStoreCountryProvider = billingStoreCountryProvider,
-                keyValueStorage = keyValueStorage
+                keyValueStorage = keyValueStorage,
+                deviceIdProvider = deviceIdProvider
             )
         }
     }
@@ -56,6 +60,7 @@ internal class AttributionServerClientImpl(
     private val advertisingIdProvider: AdvertisingIdProvider,
     private val attributionServerApi: AttributionServerApi,
     private val billingStoreCountryProvider: BillingStoreCountryProvider,
+    private val deviceIdProvider: DeviceIdProvider,
     private val keyValueStorage: KeyValueStorage,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : AttributionServerClient {
@@ -106,6 +111,10 @@ internal class AttributionServerClientImpl(
         }
     }
 
+    override suspend fun getInstallUserId(): String? {
+        return keyValueStorage.getString(KEY_ATTRIBUTION_USER_ID)
+    }
+
     private suspend fun installInternal(userId: String) {
         if (keyValueStorage.getString(KEY_ATTRIBUTION_USER_ID) != null) {
             Timber.d("Install already sent.")
@@ -135,7 +144,8 @@ internal class AttributionServerClientImpl(
                 appsflyerId = userId,
                 storeCountry = billingStoreCountryProvider.getStoreCountry() ?: "Unknown",
                 environment = config.environment.value,
-                externalAuthorization = config.externalAuthorization
+                externalAuthorization = config.externalAuthorization,
+                deviceId = deviceIdProvider.provide()
             )
 
             val installAttributionResult = attributionServerApi.install(request)

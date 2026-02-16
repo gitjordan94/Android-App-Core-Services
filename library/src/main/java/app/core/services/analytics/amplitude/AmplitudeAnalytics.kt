@@ -53,6 +53,10 @@ internal class AmplitudeAnalytics(
         amplitude.setUserId(userId)
     }
 
+    internal fun setDeviceId(deviceId: String) {
+        amplitude.setDeviceId(deviceId)
+    }
+
     internal fun reset() {
         amplitude.reset()
     }

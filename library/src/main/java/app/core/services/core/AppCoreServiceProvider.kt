@@ -7,8 +7,11 @@ import app.core.services.analytics.CompositeAnalytics
 import app.core.services.analytics.amplitude.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
+import app.core.services.appsflyer.AppsFlyerUidProvider
+import app.core.services.appsflyer.DefaultAppsFlyerUidProvider
 import app.core.services.appsflyer.attribution.AppsFlyerAttributionProvider
 import app.core.services.appupdates.AppUpdateManager
+import app.core.services.attribution.AppsflyerDeviceIdProvider
 import app.core.services.attribution.AttributionServerClient
 import app.core.services.attribution.CompositeAttributionProvider
 import app.core.services.attribution.GooglePlayInstallReferrerAttributionProvider
@@ -25,27 +28,37 @@ import app.core.services.data.KeyValueStorageImpl
 import app.core.services.data.PreferencesDataStore
 import app.core.services.deeplink.af.AppsFlyerDeepLinkManager
 import app.core.services.deviceinfo.DeviceInfoProviderFactory
+import com.appsflyer.AppsFlyerLib
 
 internal object AppCoreServiceProvider {
     fun create(configuration: AppCoreServices.Configuration): AppCoreServices {
+        val firebaseAnalytics = FirebaseAnalytics()
+
         val amplitudeAnalytics = AmplitudeAnalytics(
             context = configuration.context,
             apiKey = configuration.amplitudeApiKey,
             sessionReplayConfig = configuration.sessionReplayConfig
         )
 
+        val appsFlyer = AppsFlyerLib.getInstance()
+
+        val appsFlyerUidProvider = DefaultAppsFlyerUidProvider(
+            appsFlyer = appsFlyer,
+            applicationContext = configuration.context
+        )
+
         val appsFlyerAnalytics = AppsFlyerAnalytics(
             devKey = configuration.appsFlyerDevKey,
             applicationContext = configuration.context,
+            appsFlyer = appsFlyer,
         )
-
-        val firebaseAnalytics = FirebaseAnalytics()
 
         val billingClient = createBilling(
             configuration,
             appsFlyerAnalytics,
             firebaseAnalytics,
-            amplitudeAnalytics
+            amplitudeAnalytics,
+            appsFlyerUidProvider
         )
 
         val remoteConfig = FirebaseRemoteConfig(configuration.remoteConfigParameters)
@@ -58,19 +71,21 @@ internal object AppCoreServiceProvider {
 
         val keyValueStorage = KeyValueStorageImpl(preferenceDataStore)
 
+        val deviceIdProvider = AppsflyerDeviceIdProvider(appsFlyerAnalytics)
+
         val attributionServerClient = if (configuration.attributionServerConfig != null) {
             AttributionServerClient.create(
                 applicationContext = configuration.context,
                 attributionServerConfig = configuration.attributionServerConfig,
                 billingStoreCountryProvider = GoogleBillingStoreCountryProvider(billingClient),
-                keyValueStorage = keyValueStorage
+                keyValueStorage = keyValueStorage,
+                deviceIdProvider = deviceIdProvider
             )
         } else {
             null
         }
 
         val appsFlyerAttributionProvider = AppsFlyerAttributionProvider(
-            analytics = amplitudeAnalytics,
             preferencesDataStore = preferencesDataStore,
             appsFlyerAnalytics = appsFlyerAnalytics,
         )
@@ -109,7 +124,8 @@ internal object AppCoreServiceProvider {
             billingClient = billingClient,
             preferencesDataStore = preferencesDataStore,
             deepLinkManager = AppsFlyerDeepLinkManager(),
-            deviceInfoProvider = DeviceInfoProviderFactory.create(configuration.context)
+            deviceInfoProvider = DeviceInfoProviderFactory.create(configuration.context),
+            deviceIdProvider = deviceIdProvider
         )
     }
 
@@ -118,15 +134,13 @@ internal object AppCoreServiceProvider {
         appsFlyerAnalytics: AppsFlyerAnalytics,
         firebaseAnalytics: FirebaseAnalytics,
         amplitudeAnalytics: AmplitudeAnalytics,
+        appsFlyerUidProvider: AppsFlyerUidProvider,
     ): BillingClient {
-        val obfuscatedUserIdProvider = object : ObfuscatedUserIdProvider(
+        val obfuscatedUserIdProvider = ObfuscatedUserIdProvider(
             secretKey = configuration.billingConfig.secretKey,
             iv = configuration.billingConfig.iv,
-        ) {
-            override fun provideUserId(): String? {
-                return appsFlyerAnalytics.appsFlyerUID
-            }
-        }
+            appsFlyerUidProvider = appsFlyerUidProvider
+        )
 
         return AnalyticsBillingClientDecorator(
             decorated = GoogleBillingClient(
