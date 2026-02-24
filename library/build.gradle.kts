@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -21,7 +23,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.4.5\""
+            "\"1.4.6\""
         )
     }
 
@@ -30,8 +32,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_17
+        }
     }
 }
 
@@ -63,7 +67,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
     // Analytics
-    implementation("com.amplitude:analytics-android:1.25.1")
+    implementation("com.amplitude:analytics-android:1.25.2")
     implementation("com.amplitude:plugin-session-replay-android:0.24.1")
     api("com.appsflyer:af-android-sdk:6.17.5")
 
