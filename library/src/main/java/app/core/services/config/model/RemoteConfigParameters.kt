@@ -102,14 +102,7 @@ class RemoteConfigParameters {
         value: Any?,
         target: RemoteConfigTarget? = null
     ): RemoteConfigParameters {
-        val defaultValue = when {
-            target == null -> value?.toString() ?: ""
-            value != null -> "none_$value"
-            else -> "none"
-        }
-
-        _parameters[key] = RemoteConfigParameter(key, defaultValue, target)
-
+        _parameters[key] = RemoteConfigParameter(key, value, target)
         return this
     }
 }

@@ -6,6 +6,7 @@ import app.core.services.attribution.MediaSourceParser
 import app.core.services.core.model.Attribution
 import app.core.services.core.model.AttributionSource.GOOGLE_PLAY_INSTALL_REFERRER
 import app.core.services.core.model.MediaSource
+import app.core.services.core.model.MediaSources
 import timber.log.Timber
 import java.net.URLDecoder
 
@@ -21,22 +22,22 @@ internal class GooglePlayInstallReferrerAttributionParser(
         }
 
         val referrer = try {
-            URLDecoder.decode(data.trim(), "UTF-8")
+            URLDecoder.decode(data.trim(), Charsets.UTF_8.name())
         } catch (e: Throwable) {
             Timber.e(e)
-            data
+            data.trim()
         }
 
-        val params = referrer
-            .split("&")
-            .mapNotNull {
-                val parts = it.split("=")
-                if (parts.size == 2) parts[0] to parts[1] else null
-            }
-            .toMap()
+        val params = parseParams(referrer)
+
+        val rawMediaSource = if (params.isNotEmpty()) {
+            getMediaSourceByParams(params) ?: getMediaSourceByValue(referrer)
+        } else {
+            getMediaSourceByValue(referrer) ?: getMediaSourceByParams(params)
+        }
 
         return Attribution(
-            mediaSource = mediaSourceParser.parse(determineMediaSource(params)),
+            mediaSource = mediaSourceParser.parse(rawMediaSource),
             campaign = params["c"],
             ad = params["af_ad"],
             adGroup = params["af_adset"],
@@ -46,12 +47,41 @@ internal class GooglePlayInstallReferrerAttributionParser(
         )
     }
 
-    private fun determineMediaSource(params: Map<String, String>): String? {
-        if (isGoogleAdsReferrer(params)) {
-            return "googleadwords_int"
+    private fun parseParams(referrer: String): Map<String, String> {
+        return referrer
+            .split("&")
+            .mapNotNull { part ->
+                val index = part.indexOf('=')
+                if (index <= 0) return@mapNotNull null
+
+                val key = part.substring(0, index)
+                val value = part.substring(index + 1)
+
+                key to value
+            }
+            .toMap()
+    }
+
+    private fun getMediaSourceByValue(value: String): String? {
+        val normalized = value.trim().lowercase()
+
+        return when {
+            normalized.startsWith("tiktokglobal") -> MediaSources.TIKTOK_GLOBAL
+            normalized.startsWith("tiktok") -> MediaSources.TIKTOK
+            else -> null
+        }
+    }
+
+    private fun getMediaSourceByParams(params: Map<String, String>): String? {
+        if (params.isEmpty()) {
+            return null
         }
 
-        if (params["utm_medium"]?.equals("organic", ignoreCase = true) == true) {
+        if (isGoogleAdsReferrer(params)) {
+            return MediaSources.GOOGLE
+        }
+
+        if (params["utm_medium"]?.equals(MediaSources.ORGANIC, ignoreCase = true) == true) {
             return null
         }
 
@@ -59,7 +89,7 @@ internal class GooglePlayInstallReferrerAttributionParser(
     }
 
     private fun isGoogleAdsReferrer(params: Map<String, String>): Boolean {
-        if (params.size != 3) {
+        if (params.size < 3) {
             return false
         }
 

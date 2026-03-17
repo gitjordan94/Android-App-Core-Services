@@ -33,21 +33,26 @@ internal class FirebaseRemoteConfig(
         }
     }
 
-    internal suspend fun fetchAndActivate(): Boolean {
-        return try {
+    override suspend fun fetch() {
+        try {
+            Timber.d("Fetching remote config")
+
             remoteConfig.setConfigSettingsAsync(
                 remoteConfigSettings {
+                    fetchTimeoutInSeconds = 5
                     minimumFetchIntervalInSeconds = 1
                 }
             ).await()
 
-            remoteConfig.setDefaultsAsync(defaults.parameters.mapValues { it.value.defaultValue })
+            remoteConfig.setDefaultsAsync(defaults.parameters.mapValues { it.value.value })
                 .await()
 
             remoteConfig.fetchAndActivate().await()
+
+            Timber.d("Fetched remote config")
         } catch (e: Throwable) {
-            Timber.e(e)
-            false
+            Timber.e(e, "Failed to fetch remote config")
+            throw e
         }
     }
 
@@ -77,13 +82,21 @@ internal class FirebaseRemoteConfig(
         )
     }
 
-    override fun isSubscriptionStyleFull() = getBoolean(RemoteConfigParams.SUBS_SCREEN_STYLE_FULL)
+    override fun isSubscriptionStyleFull(): Boolean {
+        return getBoolean(RemoteConfigParams.SUBS_SCREEN_STYLE_FULL)
+    }
 
-    override fun isSubscriptionStyleHard() = getBoolean(RemoteConfigParams.SUBS_SCREEN_STYLE_HARD)
+    override fun isSubscriptionStyleHard(): Boolean {
+        return getBoolean(RemoteConfigParams.SUBS_SCREEN_STYLE_HARD)
+    }
 
-    override fun rateUsPrimaryShow() = getBoolean(RemoteConfigParams.RATE_US_PRIMARY_SHOWN)
+    override fun rateUsPrimaryShow(): Boolean {
+        return getBoolean(RemoteConfigParams.RATE_US_PRIMARY_SHOWN)
+    }
 
-    override fun rateUsSecondaryShow() = getBoolean(RemoteConfigParams.RATE_US_SECONDARY_SHOWN)
+    override fun rateUsSecondaryShow(): Boolean {
+        return getBoolean(RemoteConfigParams.RATE_US_SECONDARY_SHOWN)
+    }
 
     override fun setOnOnConfigUpdateListener(onConfigUpdateListener: OnConfigUpdateListener) {
         remoteConfig.addOnConfigUpdateListener(object : ConfigUpdateListener {
@@ -102,7 +115,7 @@ internal class FirebaseRemoteConfig(
         return RemoteConfigValueImpl.from(
             key = key,
             value = value,
-            data = remoteConfigMatchingContext,
+            context = remoteConfigMatchingContext,
             default = defaults.parameters[key]
         )
     }

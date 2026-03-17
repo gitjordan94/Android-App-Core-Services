@@ -1,4 +1,4 @@
-package app.core.services.appupdates
+package app.core.services.appupdates.util
 
 /**
  * A functional interface for providing the app's version code.
