@@ -1,7 +1,9 @@
 package app.core.services.config.model
 
+import app.core.services.config.ExperimentVariant
 import app.core.services.config.RemoteConfigMatchingContext
-import com.google.firebase.remoteconfig.FirebaseRemoteConfig.VALUE_SOURCE_STATIC
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig.VALUE_SOURCE_DEFAULT
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig.VALUE_SOURCE_REMOTE
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigValue
 import timber.log.Timber
 import java.util.regex.Pattern
@@ -9,11 +11,11 @@ import java.util.regex.Pattern
 internal class RemoteConfigValueImpl internal constructor(
     val key: String,
     override val rawValue: String?,
+    override val source: RemoteConfigSource,
     private val value: String,
-    private val source: Int,
 ) : RemoteConfigValue {
     override fun asLong(): Long {
-        if (source == VALUE_SOURCE_STATIC) {
+        if (source == RemoteConfigSource.STATIC) {
             return 0L
         }
 
@@ -37,7 +39,7 @@ internal class RemoteConfigValueImpl internal constructor(
     }
 
     override fun asDouble(): Double {
-        if (source == VALUE_SOURCE_STATIC) {
+        if (source == RemoteConfigSource.STATIC) {
             return 0.0
         }
 
@@ -61,7 +63,7 @@ internal class RemoteConfigValueImpl internal constructor(
     }
 
     override fun asString(): String {
-        if (source == VALUE_SOURCE_STATIC) {
+        if (source == RemoteConfigSource.STATIC) {
             return ""
         }
 
@@ -69,7 +71,7 @@ internal class RemoteConfigValueImpl internal constructor(
     }
 
     override fun asByteArray(): ByteArray {
-        if (source == VALUE_SOURCE_STATIC) {
+        if (source == RemoteConfigSource.STATIC) {
             return ByteArray(0)
         }
 
@@ -79,11 +81,11 @@ internal class RemoteConfigValueImpl internal constructor(
             return ByteArray(0)
         }
 
-        return asString().toByteArray()
+        return value.toByteArray()
     }
 
     override fun asBoolean(): Boolean {
-        if (source == VALUE_SOURCE_STATIC) {
+        if (source == RemoteConfigSource.STATIC) {
             return false
         }
 
@@ -113,18 +115,20 @@ internal class RemoteConfigValueImpl internal constructor(
         return asString().trim { it <= ' ' }
     }
 
-    companion object {
-        const val ILLEGAL_ARGUMENT_STRING_FORMAT = "[Value: %s] cannot be converted to a %s."
+    internal companion object {
+        private const val ILLEGAL_ARGUMENT_STRING_FORMAT =
+            "[Value: %s] cannot be converted to a %s."
 
-        val TRUE_REGEX: Pattern = Pattern.compile("^(1|true|t|yes|y|on)$", Pattern.CASE_INSENSITIVE)
+        private val TRUE_REGEX: Pattern =
+            Pattern.compile("^(1|true|t|yes|y|on)$", Pattern.CASE_INSENSITIVE)
 
-        val FALSE_REGEX: Pattern =
+        private val FALSE_REGEX: Pattern =
             Pattern.compile("^(0|false|f|no|n|off|none)$", Pattern.CASE_INSENSITIVE)
 
-        fun from(
+        internal fun from(
             key: String,
             value: FirebaseRemoteConfigValue,
-            data: RemoteConfigMatchingContext?,
+            context: RemoteConfigMatchingContext?,
             default: RemoteConfigParameter?
         ): RemoteConfigValue {
             val rawValue = try {
@@ -138,31 +142,39 @@ internal class RemoteConfigValueImpl internal constructor(
             return from(
                 key = key,
                 value = rawValue.orEmpty(),
-                source = value.source,
-                data = data,
+                source = when (value.source) {
+                    VALUE_SOURCE_DEFAULT -> RemoteConfigSource.DEFAULT
+                    VALUE_SOURCE_REMOTE -> RemoteConfigSource.REMOTE
+                    else -> RemoteConfigSource.STATIC
+                },
+                context = context,
                 default = default
             )
         }
 
-        fun from(
+        private fun from(
             key: String,
             value: String,
-            source: Int,
-            data: RemoteConfigMatchingContext?,
+            source: RemoteConfigSource,
+            context: RemoteConfigMatchingContext?,
             default: RemoteConfigParameter?
         ): RemoteConfigValue {
-            val value = default?.getValue(value, data)
-                ?: when {
-                    value.contains("none_") -> value.drop(5)
-                    value == "none" -> ""
-                    else -> value
+            val rawValue = default?.getValue(value, context) ?: value
+
+            val resolvedValue = when {
+                rawValue == ExperimentVariant.NONE -> ""
+                rawValue.startsWith(ExperimentVariant.NONE_PREFIX) -> {
+                    rawValue.removePrefix(ExperimentVariant.NONE_PREFIX)
                 }
+
+                else -> rawValue
+            }
 
             return RemoteConfigValueImpl(
                 key = key,
-                rawValue = value,
+                rawValue = rawValue,
                 source = source,
-                value = value
+                value = resolvedValue
             )
         }
     }

@@ -1,7 +1,8 @@
-package app.core.services.appupdates
+package app.core.services.appupdates.util
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import timber.log.Timber
 
 /**
@@ -13,7 +14,7 @@ internal class AppVersionProvider(private val context: Context) : VersionProvide
     private val appVersionCode: Long? by lazy {
         try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 packageInfo.longVersionCode
             } else {
                 @Suppress("DEPRECATION")

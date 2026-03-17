@@ -3,6 +3,8 @@ package app.core.services.config.model
 interface RemoteConfigValue {
     val rawValue: String?
 
+    val source: RemoteConfigSource
+
     /**
      * Gets the value as a `long`.
      *

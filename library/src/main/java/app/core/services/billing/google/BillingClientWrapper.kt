@@ -3,6 +3,8 @@ package app.core.services.billing.google
 import android.app.Activity
 import android.content.Context
 import androidx.annotation.UiThread
+import app.core.services.billing.google.error.BillingException
+import app.core.services.billing.google.extensions.message
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClient.BillingResponseCode
@@ -32,6 +34,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -45,9 +48,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import app.core.services.billing.google.error.BillingException
-import app.core.services.billing.google.extensions.message
-import kotlinx.coroutines.TimeoutCancellationException
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean

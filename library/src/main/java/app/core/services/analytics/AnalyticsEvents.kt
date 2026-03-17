@@ -2,6 +2,7 @@ package app.core.services.analytics
 
 internal object AnalyticsEvents {
     internal const val FIRST_LAUNCH = "first_launch"
+    internal const val FRAMEWORK_ATTRIBUTION_STARTED = "framework_attribution_started"
     internal const val TEST_DISTRIBUTION = "test_distribution"
     internal const val INSTALL_REFERER = "install_referrer"
     internal const val TRIAL_STARTED = "trial_started"

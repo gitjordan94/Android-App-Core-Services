@@ -6,9 +6,11 @@ import app.core.services.attribution.AttributionParser
 import app.core.services.attribution.AttributionProvider
 import app.core.services.core.model.Attribution
 import app.core.services.data.PreferencesDataStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.onEach
 import timber.log.Timber
 
 internal class AppsFlyerAttributionProvider(
@@ -24,12 +26,11 @@ internal class AppsFlyerAttributionProvider(
 
             if (attributionData == null) {
                 val conversionData = appsFlyerAnalytics.conversionDataFlow
-                    .filterNotNull()
+                    .onEach { Timber.d("AppsFlyer conversion data: $it") }
+                    .filterIsInstance<ConversionDataResult.Success>()
                     .firstOrNull()
 
-                Timber.d("AppsFlyer conversion data: $conversionData")
-
-                if (conversionData is ConversionDataResult.Success && !conversionData.data.isNullOrEmpty()) {
+                if (!conversionData?.data.isNullOrEmpty()) {
                     attributionData = appsFlyerAttributionParser.parse(conversionData.data)
                     preferencesDataStore.setAttributionData(attributionData)
                 }
@@ -43,6 +44,9 @@ internal class AppsFlyerAttributionProvider(
         } catch (e: TimeoutCancellationException) {
             Timber.e(e, "Timeout while getting AppsFlyer attribution")
             null
+        } catch (e: CancellationException) {
+            Timber.e(e, "Cancellation while getting AppsFlyer attribution")
+            throw e
         } catch (e: Throwable) {
             Timber.e(e, "Error while getting AppsFlyer attribution")
             null

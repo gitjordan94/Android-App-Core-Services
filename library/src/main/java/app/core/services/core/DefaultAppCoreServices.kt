@@ -11,19 +11,21 @@ import app.core.services.analytics.toAnalyticsProperties
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.ConversionDataResult
 import app.core.services.appupdates.AppUpdateManager
+import app.core.services.attribution.AdvertisingIdProvider
 import app.core.services.attribution.AttributionProvider
 import app.core.services.attribution.AttributionServerClient
 import app.core.services.attribution.DeviceIdProvider
 import app.core.services.billing.BillingClient
-import app.core.services.billing.model.Purchases
 import app.core.services.common.isSystemInDarkTheme
 import app.core.services.common.mapOfNotNull
 import app.core.services.common.measureExecutionTime
+import app.core.services.config.ExperimentVariant
 import app.core.services.config.FirebaseRemoteConfig
 import app.core.services.config.RemoteConfig
 import app.core.services.config.RemoteConfigMatchingContext
 import app.core.services.config.model.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
 import app.core.services.config.model.RemoteConfigValue
+import app.core.services.core.appsetid.AppSetIdProvider
 import app.core.services.core.model.Attribution
 import app.core.services.core.model.ConfigurationResult
 import app.core.services.core.model.MediaSource
@@ -42,16 +44,18 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 internal class DefaultAppCoreServices(
     override val billingClient: BillingClient,
+    override val remoteConfig: RemoteConfig,
     override val deepLinkManager: DeepLinkManager,
     private val firebaseAnalytics: FirebaseAnalytics,
     private val appUpdateManager: AppUpdateManager,
-    private val firebaseRemoteConfig: FirebaseRemoteConfig,
     private val amplitudeAnalytics: AmplitudeAnalytics,
     private val attributionServerClient: AttributionServerClient?,
     private val appsFlyerAnalytics: AppsFlyerAnalytics,
@@ -62,25 +66,34 @@ internal class DefaultAppCoreServices(
     private val attributionProvider: AttributionProvider,
     private val deviceInfoProvider: DeviceInfoProvider,
     private val deviceIdProvider: DeviceIdProvider,
+    private val appSetIdProvider: AppSetIdProvider,
+    private val advertisingIdProvider: AdvertisingIdProvider,
 ) : AppCoreServices {
     private val applicationScope = CoroutineScope(SupervisorJob() + coroutineDispatcher)
 
     override val analytics: Analytics = compositeAnalytics
 
-    override val remoteConfig: RemoteConfig = firebaseRemoteConfig
+    private val initializationMutex = Mutex()
+    private var configurationResultDeferred: Deferred<ConfigurationResult>? = null
 
     private var configurationResult: ConfigurationResult? = null
 
     init {
         val appsFlyerUID = appsFlyerAnalytics.appsFlyerUID
-
         Timber.d("AppsFlyer UID: $appsFlyerUID")
 
-        if (attributionServerClient == null) {
-            amplitudeAnalytics.setUserId(appsFlyerUID)
-            firebaseAnalytics.setUserId(appsFlyerUID)
-        }
+        initUserId(appsFlyerUID)
+        observeConversionData(appsFlyerUID)
+    }
 
+    private fun initUserId(appsFlyerUID: String?) {
+        if (attributionServerClient != null) return
+
+        amplitudeAnalytics.setUserId(appsFlyerUID)
+        firebaseAnalytics.setUserId(appsFlyerUID)
+    }
+
+    private fun observeConversionData(appsFlyerUid: String?) {
         appsFlyerAnalytics.conversionDataFlow
             .filterNotNull()
             .distinctUntilChanged()
@@ -89,7 +102,7 @@ internal class DefaultAppCoreServices(
                     is ConversionDataResult.Success -> {
                         analytics.logEvent(
                             AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS,
-                            properties = result.data.orEmpty() + mapOf("appsflyer_uid" to appsFlyerUID)
+                            properties = result.data.orEmpty() + mapOf("appsflyer_uid" to appsFlyerUid)
                         )
                     }
 
@@ -97,7 +110,7 @@ internal class DefaultAppCoreServices(
                         analytics.logEvent(
                             AnalyticsEvents.AF_CONVERSION_DATA_FAIL,
                             properties = mapOf(
-                                "appsflyer_uid" to appsFlyerUID,
+                                "appsflyer_uid" to appsFlyerUid,
                                 "error" to result.errorMessage
                             )
                         )
@@ -108,12 +121,11 @@ internal class DefaultAppCoreServices(
     }
 
     override suspend fun initialize(isFirstLaunch: Boolean?): ConfigurationResult {
-        val configurationResult = configurationResult
-        if (configurationResult != null) {
-            return configurationResult
-        }
-
-        return getConfigurationResult(isFirstLaunch)
+        return initializationMutex.withLock {
+            configurationResultDeferred
+                ?: applicationScope.async { awaitConfiguration(isFirstLaunch) }
+                    .also { configurationResultDeferred = it }
+        }.await()
     }
 
     override fun getConfigurationResult(): ConfigurationResult? {
@@ -135,14 +147,44 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private suspend fun getConfigurationResult(isFirstLaunch: Boolean?): ConfigurationResult {
+    private suspend fun awaitConfiguration(isFirstLaunch: Boolean?): ConfigurationResult {
         return withContext(coroutineDispatcher) {
             measureExecutionTime("Configuration") {
                 val isFirstAppLaunch = isFirstLaunch != false
                         && preferencesDataStore.isFirstLaunch()
 
-                val deviceInfo = async("Device Info") {
+                val attributionDeferred = async {
+                    measureExecutionTime("Attribution") {
+                        attributionProvider.provide()
+                    }
+                }
+
+                val remoteConfigsDeferred = getRemoteConfigs()
+
+                val deviceInfoDeferred = asyncOrNull("Device Info") {
                     deviceInfoProvider.collectDeviceInfo()
+                }
+
+                val appSetIdDeferred = asyncOrNull("App Set ID") {
+                    withTimeoutOrNull(MAX_TIMEOUT_IN_MILLIS) {
+                        appSetIdProvider.provide()
+                    }
+                }
+
+                val advertisingIdDeferred = asyncOrNull("Advertising ID") {
+                    advertisingIdProvider.provide()
+                }
+
+                val purchasesDeferred = asyncOrNull(name = "Purchases") {
+                    withTimeoutOrNull(MAX_TIMEOUT_IN_MILLIS) {
+                        billingClient.getPurchases()
+                    }
+                }
+
+                val storeCountryDeferred = asyncOrNull(name = "Store country") {
+                    withTimeoutOrNull(MAX_TIMEOUT_IN_MILLIS) {
+                        billingClient.getStoreCountry()
+                    }
                 }
 
                 launch {
@@ -154,51 +196,56 @@ internal class DefaultAppCoreServices(
                 }
 
                 if (isFirstAppLaunch) {
-                    onFirstLaunch(deviceInfo.await())
+                    onFirstLaunch(deviceInfoDeferred.await())
                 }
 
-                val attributionDeferred = async {
-                    measureExecutionTime("Attribution") {
-                        attributionProvider.provide()
-                    }
-                }
+                val advertisingId = advertisingIdDeferred.await()
 
-                setupFirebaseAppInstanceId()
+                val properties = mapOfNotNull(
+                    "android_framework_version" to BuildConfig.SDK_VERSION,
+                    "appsflyer_sdk_version" to BuildConfig.AF_SDK_VERSION,
+                    "appsflyer_uid" to appsFlyerAnalytics.appsFlyerUID,
+                    "app_set_id" to appSetIdDeferred.await(),
+                    "advertising_id" to advertisingId?.id,
+                    "is_limit_ad_tracking_enabled" to advertisingId?.isLimitAdTrackingEnabled,
+                )
 
-                val remoteConfigsDeferred = getRemoteConfigs()
-                val purchasesDeferred = getPurchases()
-                val storeCountryDeferred = queryStoreCountry()
+                analytics.setUserProperties(properties)
 
-                val attribution = attributionDeferred.await() ?: Attribution(MediaSource())
+                analytics.logEvent(
+                    event = AnalyticsEvents.FRAMEWORK_ATTRIBUTION_STARTED,
+                    properties = properties
+                )
 
-                val remoteConfigs = withTimeoutOrNull(MAX_TIMEOUT_IN_MILLIS) {
-                    remoteConfigsDeferred.await()
-                }
+                attachFirebaseAppInstanceId()
 
-                val purchases = withTimeoutOrNull(MAX_TIMEOUT_IN_MILLIS) {
-                    purchasesDeferred.await()
-                }
-
-                val storeCountry = withTimeoutOrNull(MAX_TIMEOUT_IN_MILLIS) {
-                    storeCountryDeferred.await()
+                val attribution = attributionDeferred.await() ?: run {
+                    Timber.w("Attribution is null, fallback to empty attribution")
+                    Attribution(MediaSource())
                 }
 
                 appsFlyerAnalytics.appsFlyerUID?.let {
                     attributionServerClient?.install(it)
                 }
 
-                val remoteConfigMatchingContext =
-                    RemoteConfigMatchingContext(attribution, storeCountry)
+                val storeCountry = storeCountryDeferred.await()
 
-                firebaseRemoteConfig.remoteConfigMatchingContext = remoteConfigMatchingContext
-
-                val abTests = getAbTests(remoteConfigs, remoteConfigMatchingContext)
-
-                sendTestDistribution(
-                    isFirstAppLaunch,
-                    storeCountry,
+                val remoteConfigMatchingContext = RemoteConfigMatchingContext(
                     attribution,
-                    abTests
+                    storeCountry
+                )
+
+                if (remoteConfig is FirebaseRemoteConfig) {
+                    remoteConfig.remoteConfigMatchingContext = remoteConfigMatchingContext
+                }
+
+                val remoteConfigs = remoteConfigsDeferred.await()
+
+                trackTestDistribution(
+                    isFirstAppLaunch = isFirstAppLaunch,
+                    storeCountry = storeCountry,
+                    attribution = attribution,
+                    abTests = resolveExperimentVariants(remoteConfigs, remoteConfigMatchingContext)
                 )
 
                 appUpdateManager.setMinSupportedVersionCode(
@@ -207,17 +254,18 @@ internal class DefaultAppCoreServices(
 
                 val activePaywallName = remoteConfig.getActivePaywallName()
 
-                configurationResult = ConfigurationResult(
+                val purchases = purchasesDeferred.await()
+
+                ConfigurationResult(
                     activePaywall = activePaywallName,
                     attribution = attribution,
                     purchases = purchases,
                     storeCountry = storeCountry,
                     isFirstLaunch = isFirstAppLaunch
-                )
-
-                Timber.d("Finished with $configurationResult.")
-
-                configurationResult!!
+                ).also {
+                    configurationResult = it
+                    Timber.d("Finished with $it.")
+                }
             }
         }
     }
@@ -236,7 +284,7 @@ internal class DefaultAppCoreServices(
         preferencesDataStore.setFirstLaunch(false)
     }
 
-    private suspend fun setupFirebaseAppInstanceId() {
+    private suspend fun attachFirebaseAppInstanceId() {
         Timber.d("Setting up Firebase app instance ID.")
 
         try {
@@ -248,41 +296,53 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private fun getAbTests(
+    private fun resolveExperimentVariants(
         configs: Map<String, RemoteConfigValue>?,
         matchingContext: RemoteConfigMatchingContext,
     ): Map<String, String> {
         if (configs.isNullOrEmpty()) {
+            Timber.d("A/B tests: no configs received")
             return emptyMap()
         }
 
+        val parameters = configuration.remoteConfigParameters.parameters
+
         val configsWithTarget = configs.filter {
-            configuration.remoteConfigParameters.parameters[it.key]?.target != null
+            parameters[it.key]?.target != null
         }
 
-        Timber.d("Processing ${configsWithTarget.size} A/B tests")
+        if (configsWithTarget.isEmpty()) {
+            Timber.d("A/B tests: no targeted configs found")
+            return emptyMap()
+        }
 
-        val result = configsWithTarget.mapValues {
-            val shouldSend = configuration.remoteConfigParameters
-                .parameters[it.key]
-                ?.target?.matches(matchingContext)
-                ?: false
+        Timber.d(
+            "A/B tests: processing %d targeted configs out of %d total",
+            configsWithTarget.size,
+            configs.size,
+        )
 
+        val experimentAssignments = configsWithTarget.mapValues {
+            val parameter = parameters[it.key]
             val rawValue = it.value.rawValue
 
             when {
-                !shouldSend || rawValue.isNullOrBlank() -> "none"
-                rawValue.startsWith("none_") -> "none"
+                rawValue.isNullOrBlank() -> ExperimentVariant.NONE
+                parameter?.target?.matches(matchingContext) != true -> ExperimentVariant.NONE
+                rawValue.startsWith(ExperimentVariant.NONE_PREFIX) -> ExperimentVariant.NONE
                 else -> rawValue
             }
         }
 
-        Timber.d("A/B tests result: ${result.filterValues { it != "none" }}")
+        Timber.d(
+            "A/B tests resolved:\n%s",
+            experimentAssignments.entries.joinToString(separator = "\n") { "key[${it.key}] = ${it.value}" }
+        )
 
-        return result
+        return experimentAssignments
     }
 
-    private fun sendTestDistribution(
+    private fun trackTestDistribution(
         isFirstAppLaunch: Boolean,
         storeCountry: String?,
         attribution: Attribution,
@@ -325,20 +385,26 @@ internal class DefaultAppCoreServices(
         amplitudeAnalytics.setUserProperties(userProperties)
         amplitudeAnalytics.logEvent(AnalyticsEvents.TEST_DISTRIBUTION, eventProperties)
         amplitudeAnalytics.flush()
+
+        Timber.d("Test distribution tracked")
     }
 
     private fun getRemoteConfigs(): Deferred<Map<String, RemoteConfigValue>> {
         return applicationScope.async {
             measureExecutionTime("Remote configs") {
-                firebaseRemoteConfig.fetchAndActivate()
+                try {
+                    remoteConfig.fetch()
+                    Timber.d("Remote configs fetched successfully")
+                } catch (e: Throwable) {
+                    Timber.e(e, "Failed to fetch remote configs")
+                }
+
                 val configs = remoteConfig.getAll()
 
                 Timber.d(
-                    "Configs: \n%s.",
-                    configs
-                        .mapValues { it.value.rawValue }
-                        .entries
-                        .joinToString(",\n") { "${it.key} = ${it.value}" }
+                    "Remote configs loaded. count=%d, keys=%s",
+                    configs.size,
+                    configs.keys.joinToString()
                 )
 
                 configs
@@ -346,31 +412,21 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private fun <T> async(
+    private fun <T> asyncOrNull(
         name: String,
         block: suspend () -> T
     ): Deferred<T?> {
         return applicationScope.async {
             measureExecutionTime(name) {
                 try {
-                    block()
+                    val result = block()
+                    Timber.d("%s loaded. isNull=%s", name, result == null)
+                    result
                 } catch (e: Throwable) {
-                    Timber.e(e, "Failed to fetch '$name'")
+                    Timber.e(e, "Failed to load %s", name)
                     null
                 }
             }
-        }
-    }
-
-    private fun getPurchases(): Deferred<Purchases?> {
-        return async(name = "Purchases") {
-            billingClient.getPurchases()
-        }
-    }
-
-    private fun queryStoreCountry(): Deferred<String?> {
-        return async(name = "Store country") {
-            billingClient.getStoreCountry()
         }
     }
 

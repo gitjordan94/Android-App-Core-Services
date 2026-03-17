@@ -67,8 +67,8 @@ internal class AnalyticsBillingClientDecorator(
 
         amplitudeAnalytics.setUserProperties(
             mapOf(
-                ACTIVE_SUBS to purchases.activeSubscriptions.toTypedArray(),
-                ALL_PURCHASED_PRODUCT_IDS to purchases.allPurchasedProductIds.toTypedArray(),
+                ACTIVE_SUBS to purchases.activeSubscriptions,
+                ALL_PURCHASED_PRODUCT_IDS to purchases.allPurchasedProductIds,
             )
         )
     }

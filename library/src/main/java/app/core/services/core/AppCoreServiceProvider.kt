@@ -10,7 +10,8 @@ import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.AppsFlyerUidProvider
 import app.core.services.appsflyer.DefaultAppsFlyerUidProvider
 import app.core.services.appsflyer.attribution.AppsFlyerAttributionProvider
-import app.core.services.appupdates.AppUpdateManager
+import app.core.services.appupdates.GoogleInAppUpdateManager
+import app.core.services.attribution.AdvertisingIdProvider
 import app.core.services.attribution.AppsflyerDeviceIdProvider
 import app.core.services.attribution.AttributionServerClient
 import app.core.services.attribution.CompositeAttributionProvider
@@ -24,6 +25,7 @@ import app.core.services.billing.google.GoogleBillingClient
 import app.core.services.billing.google.ObfuscatedUserIdProvider
 import app.core.services.config.FirebaseRemoteConfig
 import app.core.services.core.DefaultAppCoreServices.Companion.MAX_TIMEOUT_IN_MILLIS
+import app.core.services.core.appsetid.AndroidAppSetIdProvider
 import app.core.services.data.KeyValueStorageImpl
 import app.core.services.data.PreferencesDataStore
 import app.core.services.deeplink.af.AppsFlyerDeepLinkManager
@@ -61,7 +63,7 @@ internal object AppCoreServiceProvider {
             appsFlyerUidProvider
         )
 
-        val remoteConfig = FirebaseRemoteConfig(configuration.remoteConfigParameters)
+        val firebaseRemoteConfig = FirebaseRemoteConfig(configuration.remoteConfigParameters)
 
         val preferenceDataStore = PreferenceDataStoreFactory.create {
             configuration.context.preferencesDataStoreFile(configuration.dataStoreFileName)
@@ -119,13 +121,18 @@ internal object AppCoreServiceProvider {
                     appsFlyerAnalytics
                 )
             ),
-            appUpdateManager = AppUpdateManager(configuration.context, remoteConfig),
-            firebaseRemoteConfig = remoteConfig,
+            appUpdateManager = GoogleInAppUpdateManager(
+                configuration.context,
+                firebaseRemoteConfig
+            ),
+            remoteConfig = firebaseRemoteConfig,
             billingClient = billingClient,
             preferencesDataStore = preferencesDataStore,
             deepLinkManager = AppsFlyerDeepLinkManager(),
             deviceInfoProvider = DeviceInfoProviderFactory.create(configuration.context),
-            deviceIdProvider = deviceIdProvider
+            deviceIdProvider = deviceIdProvider,
+            appSetIdProvider = AndroidAppSetIdProvider(configuration.context),
+            advertisingIdProvider = AdvertisingIdProvider.create(configuration.context)
         )
     }
 
