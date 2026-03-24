@@ -4,6 +4,7 @@ import app.core.services.billing.model.Purchases
 
 data class ConfigurationResult(
     val attribution: Attribution,
+    val storeCountry: String? = null,
     val purchases: Purchases? = null,
     val isFirstLaunch: Boolean
 )

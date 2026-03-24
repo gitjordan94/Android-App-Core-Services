@@ -3,6 +3,7 @@ package app.core.services.attribution
 import android.content.Context
 import android.os.RemoteException
 import app.core.services.analytics.Analytics
+import app.core.services.analytics.AnalyticsEvents
 import app.core.services.core.GooglePlayInstallReferrerAttributionParser
 import app.core.services.core.model.Attribution
 import app.core.services.data.PreferencesDataStore
@@ -44,7 +45,7 @@ internal class GooglePlayInstallReferrerAttributionProvider(
             }
 
             analytics.logEvent(
-                event = "INSTALL_REFERRER",
+                event = AnalyticsEvents.INSTALL_REFERER,
                 properties = eventProperties
             )
 

@@ -37,6 +37,8 @@ internal class AmplitudeAnalytics(
         )
     )
 
+    private var isSessionReplayEnabled = false
+
     init {
         amplitude.logger.logMode = if (BuildConfig.DEBUG) {
             Logger.LogMode.DEBUG
@@ -51,6 +53,10 @@ internal class AmplitudeAnalytics(
 
     internal fun setUserId(userId: String?) {
         amplitude.setUserId(userId)
+    }
+
+    internal fun setDeviceId(deviceId: String) {
+        amplitude.setDeviceId(deviceId)
     }
 
     internal fun reset() {
@@ -125,13 +131,23 @@ internal class AmplitudeAnalytics(
     }
 
     override fun enableSessionReplay() {
-        Timber.d("Enable session replay.")
-        amplitude.add(sessionReplayPlugin)
+        synchronized(this) {
+            if (!isSessionReplayEnabled) {
+                Timber.d("Enable session replay.")
+                amplitude.add(sessionReplayPlugin)
+                isSessionReplayEnabled = true
+            }
+        }
     }
 
     override fun disableSessionReplay() {
-        Timber.d("Disable session replay.")
-        amplitude.remove(sessionReplayPlugin)
+        synchronized(this) {
+            if (isSessionReplayEnabled) {
+                Timber.d("Disable session replay.")
+                amplitude.remove(sessionReplayPlugin)
+                isSessionReplayEnabled = false
+            }
+        }
     }
 
     internal fun sendCohort() {

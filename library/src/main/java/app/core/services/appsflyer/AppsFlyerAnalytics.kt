@@ -3,21 +3,24 @@ package app.core.services.appsflyer
 import android.content.Context
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
+import app.core.services.analytics.PurchaseEventLogger
 import app.core.services.appsflyer.error.AppsFlyerAttributionFailureException
 import app.core.services.appsflyer.error.AppsFlyerConversionFailureException
+import app.core.services.billing.model.Purchase
+import com.appsflyer.AFInAppEventType
 import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
+import com.appsflyer.attribution.AppsFlyerRequestListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 internal class AppsFlyerAnalytics(
-    devKey: String,
+    private val devKey: String,
     private val applicationContext: Context,
-    private val appsFlyer: AppsFlyerLib = AppsFlyerLib.getInstance()
-) : Analytics {
-    private val _conversionDataFlow =
-        MutableStateFlow<ConversionDataResult>(ConversionDataResult.Loading)
+    private val appsFlyer: AppsFlyerLib,
+) : Analytics, PurchaseEventLogger {
+    private val _conversionDataFlow = MutableStateFlow<ConversionDataResult?>(null)
     internal val conversionDataFlow = _conversionDataFlow.asStateFlow()
 
     internal var appsFlyerUID: String? = null
@@ -45,7 +48,7 @@ internal class AppsFlyerAnalytics(
                         "AppsFlyer conversion data fail: $errorMessage."
                     )
 
-                    _conversionDataFlow.value = ConversionDataResult.Error(errorMessage)
+                    _conversionDataFlow.value = ConversionDataResult.Fail(errorMessage)
                 }
 
                 override fun onAppOpenAttribution(attributionData: MutableMap<String, String>?) {
@@ -66,7 +69,21 @@ internal class AppsFlyerAnalytics(
     }
 
     internal fun start() {
-        appsFlyer.start(applicationContext)
+        Timber.d("Starting AppsFlyer.")
+
+        appsFlyer.start(
+            applicationContext,
+            devKey,
+            object : AppsFlyerRequestListener {
+                override fun onSuccess() {
+                    Timber.d("AppsFlyer start success.")
+                }
+
+                override fun onError(code: Int, error: String) {
+                    Timber.e("AppsFlyer start error: $error.")
+                }
+            }
+        )
     }
 
     override fun setUserProperties(properties: Map<String, Any?>?) {
@@ -79,6 +96,14 @@ internal class AppsFlyerAnalytics(
 
     override fun logEvent(event: AnalyticsEvent) {
         logEvent(event.type, event.properties)
+    }
+
+    override fun logPurchase(purchase: Purchase) {
+        if (purchase.price.amountMicros == 0L) {
+            logEvent(AFInAppEventType.START_TRIAL)
+        } else {
+            logEvent(AFInAppEventType.PURCHASE, mapOf("productId" to purchase.product.id))
+        }
     }
 
     internal fun setAdditionalData(data: Map<String, Any>) {

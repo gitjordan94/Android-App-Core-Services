@@ -52,15 +52,12 @@ internal class AnalyticsBillingClientDecorator(
     ): Purchase {
         appsFlyerAnalytics.logEvent(INITIATED_CHECKOUT)
 
-        return try {
-            val purchase = purchaseBlock()
+        val purchase = purchaseBlock()
 
-            firebaseAnalytics.logPurchase(purchase)
+        appsFlyerAnalytics.logPurchase(purchase)
+        firebaseAnalytics.logPurchase(purchase)
 
-            purchase
-        } catch (exception: BillingClientException) {
-            throw exception
-        }
+        return purchase
     }
 
     private fun setUserProperties(purchases: Purchases?) {
@@ -70,8 +67,8 @@ internal class AnalyticsBillingClientDecorator(
 
         amplitudeAnalytics.setUserProperties(
             mapOf(
-                ACTIVE_SUBS to purchases.activeSubscriptions.toTypedArray(),
-                ALL_PURCHASED_PRODUCT_IDS to purchases.allPurchasedProductIds.toTypedArray(),
+                ACTIVE_SUBS to purchases.activeSubscriptions,
+                ALL_PURCHASED_PRODUCT_IDS to purchases.allPurchasedProductIds,
             )
         )
     }

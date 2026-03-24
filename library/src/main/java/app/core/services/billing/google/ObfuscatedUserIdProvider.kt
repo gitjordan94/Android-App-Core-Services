@@ -1,17 +1,17 @@
 package app.core.services.billing.google
 
+import app.core.services.appsflyer.AppsFlyerUidProvider
 import app.core.services.billing.util.encryptAES
 import app.core.services.billing.util.sha256
 import timber.log.Timber
 
-internal abstract class ObfuscatedUserIdProvider(
+internal class ObfuscatedUserIdProvider(
     private val secretKey: String,
     private val iv: String,
+    private val appsFlyerUidProvider: AppsFlyerUidProvider,
 ) {
-    abstract fun provideUserId(): String?
-
     fun provideObfuscatedUserId(): ObfuscatedUserId? {
-        val userId = provideUserId() ?: return null
+        val userId = appsFlyerUidProvider.get() ?: return null
 
         if (secretKey.isEmpty() || iv.isEmpty()) {
             return null

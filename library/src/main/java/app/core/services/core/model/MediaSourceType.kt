@@ -4,5 +4,6 @@ enum class MediaSourceType {
     ORGANIC,
     GOOGLE,
     FACEBOOK,
+    TIKTOK,
     UNKNOWN
 }

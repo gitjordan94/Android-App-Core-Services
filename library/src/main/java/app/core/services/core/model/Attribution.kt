@@ -8,7 +8,14 @@ data class Attribution(
     val deepLinkValue: String? = null,
     val rawData: Map<String, Any?>? = null,
     val attributionSource: AttributionSource? = null,
-)
+) {
+    constructor() : this(
+        mediaSource = MediaSource(
+            value = MediaSources.ORGANIC,
+            type = MediaSourceType.ORGANIC
+        )
+    )
+}
 
 val Attribution?.isOrganic
     get() = this?.mediaSource?.type == MediaSourceType.ORGANIC

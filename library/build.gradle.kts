@@ -1,9 +1,14 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
+
+val afVersion = "6.18.0"
+val ageSignalsVersion = "0.0.3"
 
 android {
     namespace = "app.core.services"
@@ -21,7 +26,19 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.5.0\""
+            "\"1.4.7-ff\""
+        )
+
+        buildConfigField(
+            "String",
+            "AF_SDK_VERSION",
+            "\"$afVersion\""
+        )
+
+        buildConfigField(
+            "String",
+            "AGE_SIGNALS_SDK_VERSION",
+            "\"$ageSignalsVersion\""
         )
     }
 
@@ -30,8 +47,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_17
+        }
     }
 }
 
@@ -43,7 +62,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
     // Compose
-    implementation("androidx.compose.ui:ui:1.10.0")
+    implementation("androidx.compose.ui:ui:1.10.5")
 
     // Lifecycle
     val lifecycleVersion = "2.10.0"
@@ -55,18 +74,20 @@ dependencies {
     implementation("com.android.billingclient:billing-ktx:7.1.1")
 
     // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.2.0")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     // Google Play Services
-    implementation("com.google.android.gms:play-services-ads-identifier:18.2.0")
+    implementation("com.google.android.gms:play-services-ads-identifier:18.3.0")
     implementation("com.google.android.gms:play-services-appset:16.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
+    implementation("com.google.android.play:age-signals:$ageSignalsVersion")
+
     // Analytics
-    implementation("com.amplitude:analytics-android:1.23.0")
-    implementation("com.amplitude:experiment-android-client:1.14.0")
-    implementation("com.amplitude:plugin-session-replay-android:0.23.1")
-    api("com.appsflyer:af-android-sdk:6.17.5")
+    implementation("com.amplitude:analytics-android:1.26.4")
+    implementation("com.amplitude:experiment-android-client:1.15.0")
+    implementation("com.amplitude:plugin-session-replay-android:0.24.2")
+    api("com.appsflyer:af-android-sdk:$afVersion")
 
     // Database
     val roomVersion = "2.8.4"
@@ -75,7 +96,7 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
 
     // Firebase
-    api(platform("com.google.firebase:firebase-bom:34.8.0"))
+    api(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-analytics")
 
     // ATT
@@ -86,7 +107,7 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.6")
 
     // Network
-    val ktorVersion = "3.3.3"
+    val ktorVersion = "3.0.3"
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-android:$ktorVersion")
     implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
@@ -99,6 +120,4 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
