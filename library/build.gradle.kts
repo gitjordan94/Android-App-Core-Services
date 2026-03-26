@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-val afVersion = "6.17.6"
+val afVersion = "6.18.0"
 val ageSignalsVersion = "0.0.3"
 
 android {
@@ -26,7 +26,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.4.7\""
+            "\"1.4.8\""
         )
 
         buildConfigField(
@@ -62,7 +62,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
     // Compose
-    implementation("androidx.compose.ui:ui:1.10.5")
+    implementation("androidx.compose.ui:ui:1.10.6")
 
     // Lifecycle
     val lifecycleVersion = "2.10.0"
@@ -84,12 +84,12 @@ dependencies {
     implementation("com.google.android.play:age-signals:$ageSignalsVersion")
 
     // Analytics
-    implementation("com.amplitude:analytics-android:1.26.1")
-    implementation("com.amplitude:plugin-session-replay-android:0.24.1")
+    implementation("com.amplitude:analytics-android:1.26.5")
+    implementation("com.amplitude:plugin-session-replay-android:0.24.2")
     api("com.appsflyer:af-android-sdk:$afVersion")
 
     // Firebase
-    api(platform("com.google.firebase:firebase-bom:34.10.0"))
+    api(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
 
