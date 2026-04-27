@@ -218,17 +218,16 @@ internal class DefaultAppCoreServices(
 
                 val purchases = purchasesDeferred.await()
 
-                onAttributionFinished(attribution)
-
-                ConfigurationResult(
+                val result = ConfigurationResult(
                     attribution = attribution,
                     purchases = purchases,
                     storeCountry = storeCountry,
                     isFirstLaunch = isFirstAppLaunch
-                ).also {
-                    configurationResult = it
-                    Timber.d("Finished with $it.")
-                }
+                ).also { configurationResult = it }
+
+                onFrameworkFinished(result)
+
+                result
             }
         }
     }
@@ -307,14 +306,18 @@ internal class DefaultAppCoreServices(
             "attribution_source" to attribution.attributionSource?.value
         )
 
+        analytics.setUserProperties(properties)
+
         analytics.logEvent(
             event = AnalyticsEvents.ATTRIBUTION,
             properties = properties
         )
     }
 
-    private fun onAttributionFinished(attribution: Attribution) {
+    private fun onFrameworkFinished(configuration: ConfigurationResult) {
         Timber.d("Attribution finished.")
+
+        val attribution = configuration.attribution
 
         val properties = mapOf(
             "network" to attribution.mediaSource.value,
@@ -322,11 +325,14 @@ internal class DefaultAppCoreServices(
             "adGroupName" to attribution.adGroup,
             "ad" to attribution.ad,
             "deep_link_value" to attribution.deepLinkValue,
-            "attribution_source" to attribution.attributionSource?.value
+            "attribution_source" to attribution.attributionSource?.value,
+            "store_country" to (configuration.storeCountry ?: "unknown")
         )
 
+        analytics.setUserProperties(properties)
+
         analytics.logEvent(
-            event = AnalyticsEvents.ATTRIBUTION_FINISHED,
+            event = AnalyticsEvents.FRAMEWORK_FINISHED,
             properties = properties
         )
     }

@@ -8,5 +8,5 @@ internal object AnalyticsEvents {
     internal const val AF_CONVERSION_DATA_FAIL = "af_conversion_data_fail"
     internal const val ATTRIBUTION = "framework_attribution"
     internal const val ATTRIBUTION_STARTED = "framework_attribution_started"
-    internal const val ATTRIBUTION_FINISHED = "framework_attribution_finished"
+    internal const val FRAMEWORK_FINISHED = "framework_finished"
 }
