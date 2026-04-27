@@ -218,7 +218,7 @@ internal class DefaultAppCoreServices(
 
                 val purchases = purchasesDeferred.await()
 
-                onAttributionFinished(attribution)
+                onFinished(attribution)
 
                 ConfigurationResult(
                     attribution = attribution,
@@ -307,14 +307,16 @@ internal class DefaultAppCoreServices(
             "attribution_source" to attribution.attributionSource?.value
         )
 
+        analytics.setUserProperties(properties)
+
         analytics.logEvent(
             event = AnalyticsEvents.ATTRIBUTION,
             properties = properties
         )
     }
 
-    private fun onAttributionFinished(attribution: Attribution) {
-        Timber.d("Attribution finished.")
+    private fun onFinished(attribution: Attribution) {
+        Timber.d("Framework finished.")
 
         val properties = mapOf(
             "network" to attribution.mediaSource.value,
@@ -326,7 +328,7 @@ internal class DefaultAppCoreServices(
         )
 
         analytics.logEvent(
-            event = AnalyticsEvents.ATTRIBUTION_FINISHED,
+            event = AnalyticsEvents.FRAMEWORK_FINISHED,
             properties = properties
         )
     }
