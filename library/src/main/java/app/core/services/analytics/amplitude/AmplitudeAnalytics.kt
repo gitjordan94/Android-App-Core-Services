@@ -18,14 +18,13 @@ import java.util.Calendar
 
 internal class AmplitudeAnalytics(
     context: Context,
-    apiKey: String,
+    private val amplitudeConfig: AmplitudeConfig,
     private val sessionReplayConfig: SessionReplayConfig,
-    private val optOut: Boolean = false,
 ) : Analytics {
-    private val amplitude = Amplitude(apiKey, context) {
+    private val amplitude = Amplitude(amplitudeConfig.apiKey, context) {
         flushIntervalMillis = 10_000
         flushEventsOnClose = true
-        optOut = this@AmplitudeAnalytics.optOut
+        optOut = amplitudeConfig.optOut
     }
 
     private val sessionReplayPlugin by lazy {

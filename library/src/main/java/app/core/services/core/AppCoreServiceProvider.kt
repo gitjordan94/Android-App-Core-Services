@@ -38,7 +38,7 @@ internal object AppCoreServiceProvider {
 
         val amplitudeAnalytics = AmplitudeAnalytics(
             context = configuration.context,
-            apiKey = configuration.amplitudeApiKey,
+            amplitudeConfig = configuration.amplitudeConfig,
             sessionReplayConfig = configuration.sessionReplayConfig
         )
 

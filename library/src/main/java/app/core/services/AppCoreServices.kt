@@ -3,6 +3,7 @@ package app.core.services
 import android.content.Context
 import app.core.services.AppCoreServices.Companion.configure
 import app.core.services.analytics.Analytics
+import app.core.services.analytics.amplitude.AmplitudeConfig
 import app.core.services.analytics.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.attribution.AttributionServerConfig
 import app.core.services.billing.BillingClient
@@ -105,7 +106,7 @@ interface AppCoreServices {
     class Configuration(
         val context: Context,
         val appsFlyerDevKey: String,
-        val amplitudeApiKey: String,
+        val amplitudeConfig: AmplitudeConfig,
         val billingConfig: BillingConfig,
         val remoteConfigParameters: RemoteConfigParameters,
         val attributionServerConfig: AttributionServerConfig? = null,
