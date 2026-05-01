@@ -48,13 +48,19 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -91,8 +97,7 @@ internal class DefaultAppCoreServices(
 
     private var bootstrapResultDeferred: Deferred<BootstrapResult>? = null
 
-    @Volatile
-    private var consent: Consent? = null
+    private val consentFlow = MutableStateFlow<Consent?>(null)
 
     private var bootstrapResult: BootstrapResult? = null
 
@@ -103,23 +108,11 @@ internal class DefaultAppCoreServices(
             consent.adStorage,
         )
 
-        this.consent = consent
+        consentFlow.value = consent
 
         appsFlyerAnalytics.setConsent(consent)
         amplitudeAnalytics.setConsent(consent)
         firebaseAnalytics.setConsent(consent)
-
-        val appsFlyerUID = appsFlyerAnalytics.appsFlyerUID
-
-        if (consent.analyticsStorage) {
-            Timber.d(
-                "[consent] analyticsStorage granted, applying user id (appsflyer_uid=%s)",
-                appsFlyerUID
-            )
-            setUserId(appsFlyerUID)
-        } else {
-            Timber.d("[consent] analyticsStorage denied, user id is not set")
-        }
     }
 
     override fun start(context: Context) {
@@ -135,23 +128,9 @@ internal class DefaultAppCoreServices(
 
         Timber.i("[start] AppsFlyer started, uid=%s", appsFlyerUID)
 
-        val consentSnapshot = consent
-        val analyticsAllowed = consentSnapshot == null || consentSnapshot.analyticsStorage
-
-        if (analyticsAllowed) {
-            Timber.d(
-                "[start] analytics allowed (consent=%s), wiring user id and conversion data",
-                if (consentSnapshot == null) "not_set" else "granted",
-            )
-            setUserId(appsFlyerUID)
-            observeConversionData(appsFlyerUID)
-
-            internalScope.launch {
-                attachFirebaseAppInstanceId()
-            }
-        } else {
-            Timber.d("[start] analytics denied by consent, skipping user id and conversion data wiring")
-        }
+        observeUserId(appsFlyerUID)
+        observeConversionData(appsFlyerUID)
+        observeFirebaseAppInstanceId()
 
         startedDeferred.complete(Unit)
         Timber.i("[start] complete")
@@ -208,7 +187,7 @@ internal class DefaultAppCoreServices(
         Timber.i("[load] begin")
 
         return coroutineScope {
-            val consentSnapshot = consent
+            val consentSnapshot = consentFlow.value
             Timber.d(
                 "[load] consent snapshot: %s",
                 consentSnapshot?.let { "analytics=${it.analyticsStorage}, ad=${it.adStorage}" }
@@ -281,33 +260,33 @@ internal class DefaultAppCoreServices(
         sources: LoadSources,
         deadline: Long,
     ): List<Job> = listOf(
-        launchCatching("application_install") {
+        launch("application_install") {
             val uuid = appsFlyerAnalytics.appsFlyerUID
             if (uuid == null) {
                 Timber.w("[application_install] skipped: appsflyer uid is null")
-                return@launchCatching
+                return@launch
             }
             if (attributionServerClient == null) {
                 Timber.d("[application_install] skipped: attribution server client is not configured")
-                return@launchCatching
+                return@launch
             }
             Timber.d("[application_install] sending install for uid=%s", uuid)
             attributionServerClient.install(uuid)
             Timber.d("[application_install] install sent")
         },
-        launchCatching("first_launch") {
+        launch("first_launch") {
             val deviceInfo = sources.deviceInfo.awaitUntil(deadline)
             if (deviceInfo == null) {
                 Timber.w("[first_launch] device info unavailable (timeout or failure)")
             }
             onFirstLaunch(deviceInfo)
         },
-        launchCatching("attribution_started") {
+        launch("attribution_started") {
             val appSetId = sources.appSetId.awaitUntil(deadline)
             val advertisingId = sources.advertisingId.awaitUntil(deadline)
             sendAttributionStarted(appSetId, advertisingId)
         },
-        launchCatching("test_distribution") {
+        launch("test_distribution") {
             val attribution = sources.attribution.awaitUntil(deadline) ?: run {
                 Timber.w("[test_distribution] attribution unavailable, falling back to empty MediaSource")
                 Attribution(MediaSource())
@@ -330,7 +309,7 @@ internal class DefaultAppCoreServices(
                 experiments = resolveExperimentVariants(remoteConfigs, matching),
             )
         },
-        launchCatching("force_update") {
+        launch("force_update") {
             sources.remoteConfigs.awaitUntil(deadline)
 
             runCatching {
@@ -366,10 +345,7 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private fun CoroutineScope.launchCatching(
-        name: String,
-        block: suspend () -> Unit
-    ): Job = launch {
+    private fun CoroutineScope.launch(name: String, block: suspend () -> Unit): Job = launch {
         val started = SystemClock.elapsedRealtime()
         Timber.d("[%s] start", name)
         try {
@@ -425,11 +401,33 @@ internal class DefaultAppCoreServices(
         Timber.d("[first_launch] flushed, cohort sent, flag persisted")
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeUserId(appsFlyerUid: String?): Job {
+        return consentFlow
+            .map { it == null || it.analyticsStorage }
+            .distinctUntilChanged()
+            .onEach { analyticsAllowed ->
+                val uid = if (analyticsAllowed) appsFlyerUid else null
+                Timber.d("[user_id] analyticsAllowed=%b, uid=%s", analyticsAllowed, uid)
+                setUserId(uid)
+            }
+            .launchIn(internalScope)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeConversionData(appsFlyerUid: String?): Job {
         Timber.d("[conversion_data] subscribing to AppsFlyer conversion data flow")
-        return appsFlyerAnalytics.conversionDataFlow
-            .filterNotNull()
+        return consentFlow
+            .map { it == null || it.analyticsStorage }
             .distinctUntilChanged()
+            .flatMapLatest { analyticsAllowed ->
+                if (analyticsAllowed) {
+                    appsFlyerAnalytics.conversionDataFlow.filterNotNull().distinctUntilChanged()
+                } else {
+                    Timber.d("[conversion_data] paused: analyticsStorage denied")
+                    emptyFlow()
+                }
+            }
             .onEach { result ->
                 when (result) {
                     is ConversionDataResult.Success -> {
@@ -453,6 +451,22 @@ internal class DefaultAppCoreServices(
                             )
                         )
                     }
+                }
+            }
+            .launchIn(internalScope)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeFirebaseAppInstanceId(): Job {
+        return consentFlow
+            .map { it == null || it.analyticsStorage }
+            .distinctUntilChanged()
+            .flatMapLatest { analyticsAllowed ->
+                if (analyticsAllowed) {
+                    flow<Unit> { attachFirebaseAppInstanceId() }
+                } else {
+                    Timber.d("[firebase_instance_id] paused: analyticsStorage denied")
+                    emptyFlow()
                 }
             }
             .launchIn(internalScope)
