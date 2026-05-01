@@ -34,7 +34,7 @@ import app.core.services.config.model.RemoteConfigValue
 import app.core.services.consent.Consent
 import app.core.services.core.appsetid.AppSetIdProvider
 import app.core.services.core.model.Attribution
-import app.core.services.core.model.ConfigurationResult
+import app.core.services.core.model.BootstrapResult
 import app.core.services.core.model.LoadSources
 import app.core.services.core.model.MediaSource
 import app.core.services.core.util.toMap
@@ -52,8 +52,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
@@ -91,13 +89,12 @@ internal class DefaultAppCoreServices(
 
     private val startedDeferred = CompletableDeferred<Unit>()
 
-    private var configurationResultDeferred: Deferred<ConfigurationResult>? = null
+    private var bootstrapResultDeferred: Deferred<BootstrapResult>? = null
 
     @Volatile
     private var consent: Consent? = null
 
-    private val mutableState = MutableStateFlow<ConfigurationResult?>(null)
-    val state = mutableState.asStateFlow()
+    private var bootstrapResult: BootstrapResult? = null
 
     override fun setConsent(consent: Consent) {
         Timber.i(
@@ -160,24 +157,24 @@ internal class DefaultAppCoreServices(
         Timber.i("[start] complete")
     }
 
-    override suspend fun bootstrap(isFirstLaunch: Boolean?): ConfigurationResult {
+    override suspend fun bootstrap(isFirstLaunch: Boolean?): BootstrapResult {
         Timber.i("[initialize] requested, isFirstLaunch=%s", isFirstLaunch)
 
         return mutex.withLock {
-            val existing = configurationResultDeferred
+            val existing = bootstrapResultDeferred
             if (existing != null) {
                 Timber.d("[initialize] already in progress or completed, awaiting existing result")
                 existing
             } else {
                 Timber.d("[initialize] starting fresh load")
                 internalScope.async { load(isFirstLaunch) }.also {
-                    configurationResultDeferred = it
+                    bootstrapResultDeferred = it
                 }
             }
         }.await()
     }
 
-    override fun getConfigurationResult(): ConfigurationResult? = state.value
+    override fun getBootstrapResult(): BootstrapResult? = bootstrapResult
 
     override fun getUserId(): String? {
         return appsFlyerAnalytics.appsFlyerUID
@@ -205,7 +202,7 @@ internal class DefaultAppCoreServices(
         firebaseAnalytics.setUserId(userId)
     }
 
-    private suspend fun load(isFirstLaunch: Boolean?): ConfigurationResult {
+    private suspend fun load(isFirstLaunch: Boolean?): BootstrapResult {
         Timber.d("[load] waiting for start()")
         startedDeferred.await()
         Timber.i("[load] begin")
@@ -265,7 +262,8 @@ internal class DefaultAppCoreServices(
                 jobs.joinAll()
 
                 val result = buildResult(sources)
-                mutableState.value = result
+                bootstrapResult = result
+
                 Timber.i(
                     "[load] complete: firstLaunch=%b, storeCountry=%s, network=%s, paywall=%s, purchases=%s",
                     result.isFirstLaunch,
@@ -385,7 +383,7 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private fun buildResult(sources: LoadSources): ConfigurationResult {
+    private fun buildResult(sources: LoadSources): BootstrapResult {
         val attribution = sources.attribution.getCompletedOrNull() ?: run {
             Timber.w("[build_result] attribution not completed in time, using empty MediaSource")
             Attribution(MediaSource())
@@ -398,7 +396,7 @@ internal class DefaultAppCoreServices(
         if (purchases == null) Timber.w("[build_result] purchases not completed in time")
         if (storeCountry == null) Timber.w("[build_result] store country not completed in time")
 
-        return ConfigurationResult(
+        return BootstrapResult(
             activePaywall = activePaywall,
             attribution = attribution,
             purchases = purchases,

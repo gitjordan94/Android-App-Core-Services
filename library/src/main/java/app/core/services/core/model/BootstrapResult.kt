@@ -2,7 +2,7 @@ package app.core.services.core.model
 
 import app.core.services.billing.model.Purchases
 
-data class ConfigurationResult(
+data class BootstrapResult(
     val activePaywall: String,
     val attribution: Attribution,
     val storeCountry: String? = null,

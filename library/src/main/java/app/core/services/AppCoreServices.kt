@@ -11,77 +11,97 @@ import app.core.services.config.RemoteConfig
 import app.core.services.config.model.RemoteConfigParameters
 import app.core.services.consent.Consent
 import app.core.services.core.AppCoreServiceProvider
-import app.core.services.core.model.ConfigurationResult
+import app.core.services.core.model.BootstrapResult
 import app.core.services.deeplink.DeepLinkManager
 
 /**
  * The main entry point for the App Core Services SDK.
  *
- * This interface provides a central access point for all core SDK features, including analytics,
- * remote configuration, and billing management.
+ * Provides a unified access point for analytics, remote configuration, billing, and attribution.
  *
- * ### Quickstart Guide:
- * 1. **Configure:** Call `AppCoreServices.configure(your_config)` once during app startup.
- * 2. **Access:** Use `AppCoreServices.sharedInstance` anywhere in your app to get the configured instance.
+ * ### Typical startup sequence (inside `Application.onCreate`):
+ * ```
+ * val sdk = AppCoreServices.configure(configuration)
+ * sdk.setConsent(consent)   // optional, call before start() if consent is already known
+ * sdk.start(context)
+ * ```
+ * Then call [bootstrap] early in the first screen's lifecycle to preload attribution,
+ * remote configs, and purchases before they are needed.
  */
 interface AppCoreServices {
-    /**
-     * Provides access to the analytics module for tracking events and user properties.
-     */
+    /** Analytics module for tracking events and user properties. */
     val analytics: Analytics
 
-    /**
-     * Provides access to the remote configuration module for fetching and using remote values.
-     */
+    /** Remote configuration module for fetching and reading remote values. */
     val remoteConfig: RemoteConfig
 
-    /**
-     * Provides access to the billing module for managing products, purchases, and subscriptions.
-     */
+    /** Billing module for managing products, purchases, and subscriptions. */
     val billingClient: BillingClient
 
-    /**
-     * Provides access to the deep link manager for handling and processing deep links.
-     */
+    /** Deep link manager for handling and processing incoming deep links. */
     val deepLinkManager: DeepLinkManager
 
+    /**
+     * Applies user consent to all integrated SDKs (AppsFlyer, Amplitude, Firebase).
+     *
+     * Call this **before** [start] whenever possible so that the consent state is respected
+     * from the very first SDK interaction. If called after [start], consent is still applied
+     * immediately to all SDKs, but some early events may already have been sent without it.
+     *
+     * @param consent The user's consent choices for analytics and ad storage.
+     */
     fun setConsent(consent: Consent)
 
+    /**
+     * Starts the SDK's runtime services — most importantly AppsFlyer attribution tracking.
+     *
+     * Must be called once, typically in `Application.onCreate`, after [configure] and
+     * optionally after [setConsent]. Subsequent calls are ignored.
+     *
+     * @param context The application [Context].
+     */
     fun start(context: Context)
 
     /**
-     * Bootstraps the SDK, orchestrating the internal initialization sequence for all core modules.
+     * Bootstraps the SDK by concurrently loading all data required for app startup:
+     * attribution, remote configs, billing purchases, store country, and device info.
+     *
+     * Safe to call multiple times — only the first invocation triggers loading;
+     * subsequent calls await and return the same result.
+     *
+     * @param isFirstLaunch Override for first-launch detection. Pass `false` to suppress
+     *   first-launch logic regardless of the persisted flag; `null` defers to the stored value.
+     * @return A [BootstrapResult] containing all data collected during initialization.
      */
-    suspend fun bootstrap(isFirstLaunch: Boolean? = null): ConfigurationResult
+    suspend fun bootstrap(isFirstLaunch: Boolean? = null): BootstrapResult
 
     /**
-     * Retrieves the most recently fetched configuration result.
-     *
-     * @return The cached [ConfigurationResult], or `null` if the SDK has not been initialized yet.
+     * Returns the most recently completed [BootstrapResult], or `null` if [bootstrap]
+     * has not finished yet.
      */
-    fun getConfigurationResult(): ConfigurationResult?
+    fun getBootstrapResult(): BootstrapResult?
 
     /**
-     * Retrieves the unique identifier for the current user.
-     *
-     * @return The user ID as a String, or `null` if the user has not been identified yet.
+     * Returns the AppsFlyer UID used as the SDK's internal user identifier,
+     * or `null` if AppsFlyer has not been started yet.
      */
     fun getUserId(): String?
 
     /**
-     * Associates a custom user ID with the current user.
+     * Associates your own user ID with the current session.
      *
-     * This method is used to link the SDK's internal user identifier with your own
-     * system's user ID. This is crucial for cross-referencing user data between your backend
-     * and the analytics/attribution services integrated with the SDK.
+     * Use this after a user signs in to link your backend's user record with analytics
+     * and attribution data. Pass `null` to clear the external ID and reset the Amplitude session.
      *
-     * For example, if a user logs into your app, you should call this method with their
-     * unique ID from your database.
-     *
-     * @param externalUserId The custom user ID to associate with the current user.
+     * @param externalUserId Your system's user ID, or `null` to sign the user out.
      */
     fun setExternalUserId(externalUserId: String?)
 
+    /**
+     * Immutable configuration required to initialize the SDK via [configure].
+     *
+     * Create a single instance in `Application.onCreate` and pass it to [configure].
+     */
     class Configuration(
         val context: Context,
         val appsFlyerDevKey: String,
@@ -98,10 +118,9 @@ interface AppCoreServices {
         private var INSTANCE: AppCoreServices? = null
 
         /**
-         * The globally accessible singleton instance of the App Core Services.
+         * The globally accessible singleton instance of the SDK.
          *
-         * @return A previously configured singleton [AppCoreServices] instance.
-         * @throws UninitializedPropertyAccessException if [configure] has not been called before accessing this property.
+         * @throws UninitializedPropertyAccessException if [configure] has not been called yet.
          */
         @JvmStatic
         val sharedInstance: AppCoreServices
@@ -111,13 +130,13 @@ interface AppCoreServices {
             }
 
         /**
-         * Configures and initializes the singleton instance of the App Core Services.
+         * Creates and stores the singleton [AppCoreServices] instance.
          *
-         * This method must be called once, typically in your `Application.onCreate()` method,
-         * before any other SDK functionality is used. Subsequent calls will be ignored.
+         * Must be called once in `Application.onCreate` before any other SDK usage.
+         * Subsequent calls return the existing instance without re-initializing.
          *
-         * @param configuration The [Configuration] object containing all necessary settings.
-         * @return The configured and ready-to-use singleton instance of [AppCoreServices].
+         * @param configuration SDK settings built from [Configuration].
+         * @return The configured singleton instance.
          */
         @JvmStatic
         fun configure(configuration: Configuration): AppCoreServices {

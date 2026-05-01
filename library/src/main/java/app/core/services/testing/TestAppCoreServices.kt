@@ -11,7 +11,7 @@ import app.core.services.config.RemoteConfigMatchingContext
 import app.core.services.config.model.RemoteConfigParameters
 import app.core.services.consent.Consent
 import app.core.services.core.model.Attribution
-import app.core.services.core.model.ConfigurationResult
+import app.core.services.core.model.BootstrapResult
 import app.core.services.deeplink.DeepLinkManager
 import app.core.services.deeplink.NoOpDeepLinkManager
 import kotlinx.coroutines.withTimeout
@@ -25,7 +25,7 @@ class TestAppCoreServices(
     override val deepLinkManager: DeepLinkManager = NoOpDeepLinkManager,
 ) : AppCoreServices {
     @JvmField
-    var configurationResult: ConfigurationResult? = null
+    var bootstrapResult: BootstrapResult? = null
 
     private val _userId by lazy { UUID.randomUUID().toString() + "R" }
 
@@ -37,7 +37,7 @@ class TestAppCoreServices(
         // No-op
     }
 
-    override suspend fun bootstrap(isFirstLaunch: Boolean?): ConfigurationResult {
+    override suspend fun bootstrap(isFirstLaunch: Boolean?): BootstrapResult {
         Timber.d("TestAppCoreServices.initialize()")
 
         val storeCountry = billingClient.getStoreCountry()
@@ -50,7 +50,7 @@ class TestAppCoreServices(
             Timber.e(e, "Failed to fetch remote config")
         }
 
-        val attribution = configurationResult?.attribution
+        val attribution = bootstrapResult?.attribution
             ?: Attribution()
 
         val remoteConfigMatchingContext = RemoteConfigMatchingContext(
@@ -67,16 +67,16 @@ class TestAppCoreServices(
 
         Timber.d("Remote config: $configs")
 
-        return configurationResult ?: ConfigurationResult(
+        return bootstrapResult ?: BootstrapResult(
             activePaywall = remoteConfig.getActivePaywallName(),
             attribution = attribution,
             storeCountry = storeCountry,
             purchases = billingClient.getPurchases(),
             isFirstLaunch = isFirstLaunch ?: true
-        ).also { configurationResult = it }
+        ).also { bootstrapResult = it }
     }
 
-    override fun getConfigurationResult(): ConfigurationResult? = configurationResult
+    override fun getBootstrapResult(): BootstrapResult? = bootstrapResult
 
     override fun getUserId(): String = _userId
 
