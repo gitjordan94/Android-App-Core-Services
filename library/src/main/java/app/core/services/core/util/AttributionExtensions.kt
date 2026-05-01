@@ -3,7 +3,7 @@ package app.core.services.core.util
 import app.core.services.common.mapOfNotNull
 import app.core.services.core.model.Attribution
 
-fun Attribution.toUserProperties(): Map<String, String> {
+fun Attribution.toMap(): Map<String, String> {
     return mapOfNotNull(
         "network" to mediaSource.value,
         "campaignName" to campaign,

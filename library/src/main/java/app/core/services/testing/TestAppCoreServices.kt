@@ -37,7 +37,7 @@ class TestAppCoreServices(
         // No-op
     }
 
-    override suspend fun initialize(isFirstLaunch: Boolean?): ConfigurationResult {
+    override suspend fun bootstrap(isFirstLaunch: Boolean?): ConfigurationResult {
         Timber.d("TestAppCoreServices.initialize()")
 
         val storeCountry = billingClient.getStoreCountry()

@@ -50,16 +50,9 @@ interface AppCoreServices {
     fun start(context: Context)
 
     /**
-     * Initializes the SDK by fetching all necessary remote data, such as configuration,
-     * attribution, and user entitlements.
-     *
-     * This method should be called once, typically on application launch.
-     *
-     * @param isFirstLaunch A flag to indicate if this is the first time the app is being launched.
-     *                      If `null`, the SDK will determine this automatically.
-     * @return A [ConfigurationResult] containing the fetched configuration and user state.
+     * Bootstraps the SDK, orchestrating the internal initialization sequence for all core modules.
      */
-    suspend fun initialize(isFirstLaunch: Boolean? = null): ConfigurationResult
+    suspend fun bootstrap(isFirstLaunch: Boolean? = null): ConfigurationResult
 
     /**
      * Retrieves the most recently fetched configuration result.

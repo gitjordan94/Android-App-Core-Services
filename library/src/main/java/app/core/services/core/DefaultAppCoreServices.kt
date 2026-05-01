@@ -6,6 +6,8 @@ import app.core.services.AppCoreServices
 import app.core.services.BuildConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvents
+import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_FAIL
+import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS
 import app.core.services.analytics.amplitude.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.analytics.toAnalyticsProperties
@@ -35,6 +37,7 @@ import app.core.services.core.model.Attribution
 import app.core.services.core.model.ConfigurationResult
 import app.core.services.core.model.LoadSources
 import app.core.services.core.model.MediaSource
+import app.core.services.core.util.toMap
 import app.core.services.data.PreferencesDataStore
 import app.core.services.deeplink.DeepLinkManager
 import app.core.services.deviceinfo.DeviceInfo
@@ -157,7 +160,7 @@ internal class DefaultAppCoreServices(
         Timber.i("[start] complete")
     }
 
-    override suspend fun initialize(isFirstLaunch: Boolean?): ConfigurationResult {
+    override suspend fun bootstrap(isFirstLaunch: Boolean?): ConfigurationResult {
         Timber.i("[initialize] requested, isFirstLaunch=%s", isFirstLaunch)
 
         return mutex.withLock {
@@ -437,7 +440,7 @@ internal class DefaultAppCoreServices(
                             result.data?.size ?: 0,
                         )
                         analytics.logEvent(
-                            AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS,
+                            event = AF_CONVERSION_DATA_SUCCESS,
                             properties = result.data.orEmpty() + mapOf("appsflyer_uid" to appsFlyerUid)
                         )
                     }
@@ -445,7 +448,7 @@ internal class DefaultAppCoreServices(
                     is ConversionDataResult.Fail -> {
                         Timber.w("[conversion_data] failed: %s", result.errorMessage)
                         analytics.logEvent(
-                            AnalyticsEvents.AF_CONVERSION_DATA_FAIL,
+                            AF_CONVERSION_DATA_FAIL,
                             properties = mapOf(
                                 "appsflyer_uid" to appsFlyerUid,
                                 "error" to result.errorMessage
@@ -580,14 +583,7 @@ internal class DefaultAppCoreServices(
         attribution: Attribution,
         experiments: Map<String, String>,
     ) {
-        val attributionProperties = mapOfNotNull(
-            "network" to attribution.mediaSource.value,
-            "campaignName" to attribution.campaign,
-            "adGroupName" to attribution.adGroup,
-            "ad" to attribution.ad,
-            "deep_link_value" to attribution.deepLinkValue
-        )
-
+        val attributionProperties = attribution.toMap()
         val eventProperties = attributionProperties + experiments
 
         val userProperties = buildMap {
