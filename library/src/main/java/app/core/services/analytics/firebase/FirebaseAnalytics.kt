@@ -4,17 +4,23 @@ import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
 import app.core.services.analytics.AnalyticsEvents
 import app.core.services.analytics.PurchaseEventLogger
+import app.core.services.analytics.firebase.util.toFirebaseConsent
 import app.core.services.billing.model.Purchase
 import app.core.services.common.toBundle
+import app.core.services.consent.Consent
 import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
 import kotlinx.coroutines.tasks.await
 
 internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
-    private val analytics = Firebase.analytics
+    private val analytics by lazy { Firebase.analytics }
 
     internal fun setUserId(userId: String?) {
         analytics.setUserId(userId)
+    }
+
+    internal fun setConsent(consent: Consent) {
+        analytics.setConsent(consent.toFirebaseConsent())
     }
 
     override fun setUserProperties(properties: Map<String, Any?>?) {
@@ -45,7 +51,7 @@ internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
         }
     }
 
-    internal suspend fun getAppInstanceId(): String {
+    internal suspend fun getAppInstanceId(): String? {
         return analytics.appInstanceId.await()
     }
 }

@@ -9,6 +9,7 @@ import app.core.services.billing.BillingClient
 import app.core.services.billing.BillingConfig
 import app.core.services.config.RemoteConfig
 import app.core.services.config.model.RemoteConfigParameters
+import app.core.services.consent.Consent
 import app.core.services.core.AppCoreServiceProvider
 import app.core.services.core.model.ConfigurationResult
 import app.core.services.deeplink.DeepLinkManager
@@ -43,6 +44,10 @@ interface AppCoreServices {
      * Provides access to the deep link manager for handling and processing deep links.
      */
     val deepLinkManager: DeepLinkManager
+
+    fun setConsent(consent: Consent)
+
+    fun start(context: Context)
 
     /**
      * Initializes the SDK by fetching all necessary remote data, such as configuration,

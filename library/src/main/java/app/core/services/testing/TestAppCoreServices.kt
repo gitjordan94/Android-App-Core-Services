@@ -1,5 +1,6 @@
 package app.core.services.testing
 
+import android.content.Context
 import app.core.services.AppCoreServices
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.NoOpAnalytics
@@ -8,6 +9,7 @@ import app.core.services.config.FirebaseRemoteConfig
 import app.core.services.config.RemoteConfig
 import app.core.services.config.RemoteConfigMatchingContext
 import app.core.services.config.model.RemoteConfigParameters
+import app.core.services.consent.Consent
 import app.core.services.core.model.Attribution
 import app.core.services.core.model.ConfigurationResult
 import app.core.services.deeplink.DeepLinkManager
@@ -26,6 +28,14 @@ class TestAppCoreServices(
     var configurationResult: ConfigurationResult? = null
 
     private val _userId by lazy { UUID.randomUUID().toString() + "R" }
+
+    override fun start(context: Context) {
+        // No-op
+    }
+
+    override fun setConsent(consent: Consent) {
+        // No-op
+    }
 
     override suspend fun initialize(isFirstLaunch: Boolean?): ConfigurationResult {
         Timber.d("TestAppCoreServices.initialize()")
