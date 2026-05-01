@@ -1,10 +1,7 @@
-package app.core.services.core
+package app.core.services.attribution
 
-import app.core.services.attribution.AttributionParser
-import app.core.services.attribution.DefaultMediaSourceParser
-import app.core.services.attribution.MediaSourceParser
 import app.core.services.core.model.Attribution
-import app.core.services.core.model.AttributionSource.GOOGLE_PLAY_INSTALL_REFERRER
+import app.core.services.core.model.AttributionSource
 import app.core.services.core.model.MediaSource
 import app.core.services.core.model.MediaSources
 import timber.log.Timber
@@ -17,7 +14,7 @@ internal class GooglePlayInstallReferrerAttributionParser(
         if (data.isNullOrBlank()) {
             return Attribution(
                 mediaSource = MediaSource(),
-                attributionSource = GOOGLE_PLAY_INSTALL_REFERRER
+                attributionSource = AttributionSource.GOOGLE_PLAY_INSTALL_REFERRER
             )
         }
 
@@ -43,7 +40,7 @@ internal class GooglePlayInstallReferrerAttributionParser(
             adGroup = params["af_adset"],
             deepLinkValue = params["deep_link_value"],
             rawData = params,
-            attributionSource = GOOGLE_PLAY_INSTALL_REFERRER
+            attributionSource = AttributionSource.GOOGLE_PLAY_INSTALL_REFERRER
         )
     }
 

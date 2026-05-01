@@ -23,7 +23,7 @@ import app.core.services.billing.PurchasesPreferencesDataStore
 import app.core.services.billing.google.BillingClientWrapper
 import app.core.services.billing.google.GoogleBillingClient
 import app.core.services.billing.google.ObfuscatedUserIdProvider
-import app.core.services.core.DefaultAppCoreServices.Companion.MAX_TIMEOUT_IN_MILLIS
+import app.core.services.core.DefaultAppCoreServices.Companion.MAX_TIMEOUT_MS
 import app.core.services.core.appsetid.AndroidAppSetIdProvider
 import app.core.services.data.KeyValueStorageImpl
 import app.core.services.data.PreferencesDataStore
@@ -38,7 +38,7 @@ internal object AppCoreServiceProvider {
 
         val amplitudeAnalytics = AmplitudeAnalytics(
             context = configuration.context,
-            apiKey = configuration.amplitudeApiKey,
+            amplitudeConfig = configuration.amplitudeConfig,
             sessionReplayConfig = configuration.sessionReplayConfig
         )
 
@@ -107,7 +107,7 @@ internal object AppCoreServiceProvider {
             // Attribution
             attributionServerClient = attributionServerClient,
             attributionProvider = CompositeAttributionProvider(
-                timeout = MAX_TIMEOUT_IN_MILLIS,
+                timeout = MAX_TIMEOUT_MS,
                 providers = listOf(
                     appsFlyerAttributionProvider,
                     googlePlayInstallReferrerAttributionProvider
@@ -117,14 +117,10 @@ internal object AppCoreServiceProvider {
             amplitudeAnalytics = amplitudeAnalytics,
             firebaseAnalytics = firebaseAnalytics,
             appsFlyerAnalytics = appsFlyerAnalytics,
-            compositeAnalytics = CompositeAnalytics(
-                analytics = listOf(
-                    amplitudeAnalytics,
-                    firebaseAnalytics,
-                    appsFlyerAnalytics
-                )
+            appUpdateManager = GoogleInAppUpdateManager(
+                configuration.context,
+                firebaseRemoteConfig
             ),
-            appUpdateManager = GoogleInAppUpdateManager(configuration.context),
             remoteConfig = remoteConfig,
             billingClient = billingClient,
             preferencesDataStore = preferencesDataStore,
@@ -132,7 +128,14 @@ internal object AppCoreServiceProvider {
             deviceInfoProvider = DeviceInfoProviderFactory.create(configuration.context),
             deviceIdProvider = deviceIdProvider,
             appSetIdProvider = AndroidAppSetIdProvider(configuration.context),
-            advertisingIdProvider = AdvertisingIdProvider.create(configuration.context)
+            advertisingIdProvider = AdvertisingIdProvider.create(configuration.context),
+            analytics = CompositeAnalytics(
+                analytics = listOf(
+                    amplitudeAnalytics,
+                    firebaseAnalytics,
+                    appsFlyerAnalytics
+                )
+            )
         )
     }
 

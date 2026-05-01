@@ -1,5 +1,6 @@
 package app.core.services.core
 
+import app.core.services.attribution.GooglePlayInstallReferrerAttributionParser
 import app.core.services.core.model.AttributionSource
 import app.core.services.core.model.MediaSource
 import app.core.services.core.model.MediaSourceType

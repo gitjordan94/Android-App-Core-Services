@@ -1,11 +1,12 @@
-package app.core.services.amplitude.analytics
+package app.core.services.analytics.amplitude
 
 import android.content.Context
 import app.core.services.BuildConfig
-import app.core.services.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
 import app.core.services.analytics.AnalyticsProperties
+import app.core.services.analytics.amplitude.sessionreplay.SessionReplayConfig
+import app.core.services.consent.Consent
 import com.amplitude.android.Amplitude
 import com.amplitude.android.plugins.SessionReplayPlugin
 import com.amplitude.android.sessionreplay.config.MaskLevel
@@ -17,25 +18,28 @@ import java.util.Calendar
 
 internal class AmplitudeAnalytics(
     context: Context,
-    apiKey: String,
-    sessionReplayConfig: SessionReplayConfig,
+    private val amplitudeConfig: AmplitudeConfig,
+    private val sessionReplayConfig: SessionReplayConfig,
 ) : Analytics {
-    private val amplitude = Amplitude(apiKey, context) {
+    private val amplitude = Amplitude(amplitudeConfig.apiKey, context) {
         flushIntervalMillis = 10_000
         flushEventsOnClose = true
+        optOut = amplitudeConfig.optOut
     }
 
-    private val sessionReplayPlugin = SessionReplayPlugin(
-        sampleRate = sessionReplayConfig.sampleRate,
-        enableRemoteConfig = sessionReplayConfig.enableRemoteConfig,
-        privacyConfig = PrivacyConfig(
-            maskLevel = when (sessionReplayConfig.maskLevel) {
-                SessionReplayConfig.MaskLevel.LIGHT -> MaskLevel.LIGHT
-                SessionReplayConfig.MaskLevel.MEDIUM -> MaskLevel.MEDIUM
-                SessionReplayConfig.MaskLevel.CONSERVATIVE -> MaskLevel.CONSERVATIVE
-            }
+    private val sessionReplayPlugin by lazy {
+        SessionReplayPlugin(
+            sampleRate = sessionReplayConfig.sampleRate,
+            enableRemoteConfig = sessionReplayConfig.enableRemoteConfig,
+            privacyConfig = PrivacyConfig(
+                maskLevel = when (sessionReplayConfig.maskLevel) {
+                    SessionReplayConfig.MaskLevel.LIGHT -> MaskLevel.LIGHT
+                    SessionReplayConfig.MaskLevel.MEDIUM -> MaskLevel.MEDIUM
+                    SessionReplayConfig.MaskLevel.CONSERVATIVE -> MaskLevel.CONSERVATIVE
+                }
+            )
         )
-    )
+    }
 
     private var isSessionReplayEnabled = false
 
@@ -45,14 +49,25 @@ internal class AmplitudeAnalytics(
         } else {
             Logger.LogMode.INFO
         }
-
-        if (sessionReplayConfig.autoStart) {
-            enableSessionReplay()
-        }
     }
 
     internal fun setUserId(userId: String?) {
         amplitude.setUserId(userId)
+    }
+
+    internal fun setConsent(consent: Consent) {
+        val analyticsAllowed = consent.analyticsStorage
+        setOptOut(!analyticsAllowed)
+        Timber.d("Amplitude consent: analyticsStorage=$analyticsAllowed, optOut=${!analyticsAllowed}")
+    }
+
+    internal fun setOptOut(optOut: Boolean) {
+        amplitude.configuration.optOut = optOut
+
+        when {
+            optOut -> disableSessionReplay()
+            sessionReplayConfig.autoStart -> enableSessionReplay()
+        }
     }
 
     internal fun setDeviceId(deviceId: String) {

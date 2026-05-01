@@ -1,13 +1,16 @@
 package app.core.services.appsflyer
 
 import android.content.Context
+import app.core.services.BuildConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
-import app.core.services.analytics.PurchaseEventLogger
 import app.core.services.appsflyer.error.AppsFlyerAttributionFailureException
 import app.core.services.appsflyer.error.AppsFlyerConversionFailureException
+import app.core.services.billing.logger.PurchaseEventLogger
 import app.core.services.billing.model.Purchase
+import app.core.services.consent.Consent
 import com.appsflyer.AFInAppEventType
+import com.appsflyer.AppsFlyerConsent
 import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
 import com.appsflyer.attribution.AppsFlyerRequestListener
@@ -34,6 +37,8 @@ internal class AppsFlyerAnalytics(
         }
 
     init {
+        appsFlyer.setDebugLog(BuildConfig.DEBUG)
+
         appsFlyer.init(
             devKey,
             object : AppsFlyerConversionListener {
@@ -65,14 +70,27 @@ internal class AppsFlyerAnalytics(
             applicationContext
         )
 
-        start()
+        appsFlyer.enableTCFDataCollection(true)
     }
 
-    internal fun start() {
+    internal fun setConsent(consent: Consent) {
+        Timber.d("AppsFlyer consent: $consent")
+
+        appsFlyer.setConsentData(
+            AppsFlyerConsent(
+                isUserSubjectToGDPR = null,
+                hasConsentForDataUsage = consent.adUserData,
+                hasConsentForAdsPersonalization = consent.adPersonalization,
+                hasConsentForAdStorage = consent.adStorage
+            )
+        )
+    }
+
+    internal fun start(context: Context) {
         Timber.d("Starting AppsFlyer.")
 
         appsFlyer.start(
-            applicationContext,
+            context,
             devKey,
             object : AppsFlyerRequestListener {
                 override fun onSuccess() {
