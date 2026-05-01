@@ -8,6 +8,7 @@ import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvents
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_FAIL
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS
+import app.core.services.analytics.AnalyticsProperties
 import app.core.services.analytics.amplitude.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.analytics.toAnalyticsProperties
@@ -193,42 +194,70 @@ internal class DefaultAppCoreServices(
                 val deadline = SystemClock.elapsedRealtime() + MAX_TIMEOUT_MS
                 Timber.d("[load] deadline set to %d ms from now", MAX_TIMEOUT_MS)
 
-                val sources = LoadSources(
-                    isFirstLaunch = async("first_launch") {
-                        isFirstLaunch != false && preferencesDataStore.isFirstLaunch()
-                    },
-                    attribution = async("attribution") {
-                        attributionProvider.provide()
-                    },
-                    remoteConfigs = async("remote_configs") {
-                        // TODO:
-                        mapOf()
-                    },
-                    deviceInfo = async("device_info") {
-                        deviceInfoProvider.collectDeviceInfo()
-                    },
-                    appSetId = async("app_set_id") {
-                        if (consentSnapshot == null || consentSnapshot.adStorage) {
-                            appSetIdProvider.provide()
-                        } else {
-                            Timber.d("[app_set_id] skipped: adStorage denied")
-                            null
-                        }
-                    },
-                    advertisingId = async("advertising_id") {
-                        if (consentSnapshot == null || consentSnapshot.adStorage) {
-                            advertisingIdProvider.provide()
-                        } else {
-                            Timber.d("[advertising_id] skipped: adStorage denied")
-                            null
-                        }
-                    },
-                    purchases = async("purchases") {
-                        billingClient.getPurchases()
-                    },
-                    storeCountry = async("store_country") {
-                        billingClient.getStoreCountry()
+                val isFirstLaunchDeferred = async("first_launch") {
+                    isFirstLaunch != false && preferencesDataStore.isFirstLaunch()
+                }
+                val attributionDeferred = async("attribution") {
+                    attributionProvider.provide()
+                }
+                val deviceInfoDeferred = async("device_info") {
+                    deviceInfoProvider.collectDeviceInfo()
+                }
+                val appSetIdDeferred = async("app_set_id") {
+                    if (consentSnapshot == null || consentSnapshot.adStorage) {
+                        appSetIdProvider.provide()
+                    } else {
+                        Timber.d("[app_set_id] skipped: adStorage denied")
+                        null
                     }
+                }
+                val advertisingIdDeferred = async("advertising_id") {
+                    if (consentSnapshot == null || consentSnapshot.adStorage) {
+                        advertisingIdProvider.provide()
+                    } else {
+                        Timber.d("[advertising_id] skipped: adStorage denied")
+                        null
+                    }
+                }
+                val purchasesDeferred = async("purchases") {
+                    billingClient.getPurchases()
+                }
+                val storeCountryDeferred = async("store_country") {
+                    billingClient.getStoreCountry()
+                }
+
+                val remoteConfigsDeferred = async("remote_configs") {
+                    val attribution = attributionDeferred.awaitUntil(deadline)
+                        ?: Attribution(MediaSource())
+
+                    val storeCountry = storeCountryDeferred.awaitUntil(deadline)
+
+                    val userId = amplitudeAnalytics.getUserId()
+
+                    val userProperties = attribution.toMap()
+                        .plus(AnalyticsProperties.STORE_COUNTRY to storeCountry)
+
+                    Timber.d(
+                        "[remote_configs] fetching feature flags from Amplitude: userId: %s, properties: %s",
+                        userId,
+                        userProperties
+                    )
+
+                    remoteConfig.fetch(
+                        userId = userId,
+                        userProperties = userProperties
+                    )
+                }
+
+                val sources = LoadSources(
+                    isFirstLaunch = isFirstLaunchDeferred,
+                    attribution = attributionDeferred,
+                    remoteConfigs = remoteConfigsDeferred,
+                    deviceInfo = deviceInfoDeferred,
+                    appSetId = appSetIdDeferred,
+                    advertisingId = advertisingIdDeferred,
+                    purchases = purchasesDeferred,
+                    storeCountry = storeCountryDeferred,
                 )
 
                 launchDeviceIdAttach()
@@ -239,6 +268,10 @@ internal class DefaultAppCoreServices(
                 val result = buildResult(sources)
                 bootstrapResult = result
 
+                launch {
+                    onFrameworkFinished(result)
+                }
+
                 Timber.i(
                     "[load] complete: firstLaunch=%b, storeCountry=%s, network=%s, purchases=%s",
                     result.isFirstLaunch,
@@ -246,6 +279,7 @@ internal class DefaultAppCoreServices(
                     result.attribution.mediaSource.value,
                     result.purchases
                 )
+
                 result
             }
         }
@@ -281,15 +315,11 @@ internal class DefaultAppCoreServices(
             val advertisingId = sources.advertisingId.awaitUntil(deadline)
             sendAttributionStarted(appSetId, advertisingId)
         },
-        launch("feature_flags") {
-            val attribution = sources.attribution.awaitUntil(deadline) ?: run {
-                Timber.w("[test_distribution] attribution unavailable, falling back to empty MediaSource")
-                Attribution(MediaSource())
-            }
-            val storeCountry = sources.storeCountry.awaitUntil(deadline)
-            val remoteConfigs = sources.remoteConfigs.awaitUntil(deadline)
+        launch("attribution") {
+            val attribution = sources.attribution.awaitUntil(deadline)
+                ?: Attribution(MediaSource())
 
-            // TODO: remoteConfig.fetch()
+            onUserAttributed(attribution)
         },
         launch("force_update") {
             sources.remoteConfigs.awaitUntil(deadline)
@@ -504,6 +534,19 @@ internal class DefaultAppCoreServices(
         analytics.logEvent(AnalyticsEvents.ATTRIBUTION, properties)
     }
 
+    private fun onFrameworkFinished(result: BootstrapResult) {
+        Timber.d("Attribution finished.")
+
+        val properties = result.attribution.toMap()
+            .plus(AnalyticsProperties.STORE_COUNTRY to (result.storeCountry ?: "unknown"))
+
+        analytics.setUserProperties(properties)
+
+        analytics.logEvent(
+            event = AnalyticsEvents.FRAMEWORK_FINISHED,
+            properties = properties
+        )
+    }
 
     private fun <T> async(name: String, block: suspend () -> T): Deferred<T?> {
         return internalScope.async {
