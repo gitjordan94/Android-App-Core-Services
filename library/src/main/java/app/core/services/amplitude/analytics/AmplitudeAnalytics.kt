@@ -2,10 +2,10 @@ package app.core.services.analytics.amplitude
 
 import android.content.Context
 import app.core.services.BuildConfig
+import app.core.services.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
 import app.core.services.analytics.AnalyticsProperties
-import app.core.services.analytics.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.consent.Consent
 import com.amplitude.android.Amplitude
 import com.amplitude.android.plugins.SessionReplayPlugin

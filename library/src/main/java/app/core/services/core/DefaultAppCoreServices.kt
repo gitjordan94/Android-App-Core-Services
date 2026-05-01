@@ -22,15 +22,10 @@ import app.core.services.attribution.model.AdvertisingId
 import app.core.services.billing.BillingClient
 import app.core.services.common.awaitUntil
 import app.core.services.common.getCompletedOrNull
-import app.core.services.common.isSystemInDarkTheme
 import app.core.services.common.mapOfNotNull
 import app.core.services.common.measureExecutionTime
-import app.core.services.config.ExperimentVariant
-import app.core.services.config.FirebaseRemoteConfig
 import app.core.services.config.RemoteConfig
-import app.core.services.config.RemoteConfigMatchingContext
-import app.core.services.config.model.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
-import app.core.services.config.model.RemoteConfigValue
+import app.core.services.config.RemoteConfigParams
 import app.core.services.consent.Consent
 import app.core.services.core.appsetid.AppSetIdProvider
 import app.core.services.core.model.Attribution
@@ -55,10 +50,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -206,7 +201,8 @@ internal class DefaultAppCoreServices(
                         attributionProvider.provide()
                     },
                     remoteConfigs = async("remote_configs") {
-                        getRemoteConfigs()
+                        // TODO:
+                        mapOf()
                     },
                     deviceInfo = async("device_info") {
                         deviceInfoProvider.collectDeviceInfo()
@@ -244,11 +240,10 @@ internal class DefaultAppCoreServices(
                 bootstrapResult = result
 
                 Timber.i(
-                    "[load] complete: firstLaunch=%b, storeCountry=%s, network=%s, paywall=%s, purchases=%s",
+                    "[load] complete: firstLaunch=%b, storeCountry=%s, network=%s, purchases=%s",
                     result.isFirstLaunch,
                     result.storeCountry,
                     result.attribution.mediaSource.value,
-                    result.activePaywall,
                     result.purchases
                 )
                 result
@@ -286,35 +281,22 @@ internal class DefaultAppCoreServices(
             val advertisingId = sources.advertisingId.awaitUntil(deadline)
             sendAttributionStarted(appSetId, advertisingId)
         },
-        launch("test_distribution") {
+        launch("feature_flags") {
             val attribution = sources.attribution.awaitUntil(deadline) ?: run {
                 Timber.w("[test_distribution] attribution unavailable, falling back to empty MediaSource")
                 Attribution(MediaSource())
             }
             val storeCountry = sources.storeCountry.awaitUntil(deadline)
             val remoteConfigs = sources.remoteConfigs.awaitUntil(deadline)
-            val matching = RemoteConfigMatchingContext(attribution, storeCountry)
 
-            if (remoteConfigs != null && remoteConfig is FirebaseRemoteConfig) {
-                Timber.d("[test_distribution] applying matching context to FirebaseRemoteConfig")
-                remoteConfig.remoteConfigMatchingContext = matching
-            } else if (remoteConfigs == null) {
-                Timber.w("[test_distribution] remote configs unavailable, matching context not applied")
-            }
-
-            trackTestDistribution(
-                isFirstAppLaunch = sources.isFirstLaunch.await() ?: false,
-                storeCountry = storeCountry,
-                attribution = attribution,
-                experiments = resolveExperimentVariants(remoteConfigs, matching),
-            )
+            // TODO: remoteConfig.fetch()
         },
         launch("force_update") {
             sources.remoteConfigs.awaitUntil(deadline)
 
             runCatching {
-                val minVersion = remoteConfig.getLong(MIN_SUPPORTED_APP_VERSION)
-                appUpdateManager.setMinSupportedVersionCode(minVersion)
+                val minVersion = remoteConfig.getLong(RemoteConfigParams.MIN_SUPPORTED_APP_VERSION)
+                minVersion?.let(appUpdateManager::setMinSupportedVersionCode)
                 Timber.i("[force_update] min supported version applied: %d", minVersion)
             }.onFailure {
                 Timber.e(it, "[force_update] failed to apply min supported version")
@@ -367,13 +349,11 @@ internal class DefaultAppCoreServices(
         val purchases = sources.purchases.getCompletedOrNull()
         val storeCountry = sources.storeCountry.getCompletedOrNull()
         val isFirstLaunch = sources.isFirstLaunch.getCompletedOrNull() ?: false
-        val activePaywall = remoteConfig.getActivePaywallName()
 
         if (purchases == null) Timber.w("[build_result] purchases not completed in time")
         if (storeCountry == null) Timber.w("[build_result] store country not completed in time")
 
         return BootstrapResult(
-            activePaywall = activePaywall,
             attribution = attribution,
             purchases = purchases,
             storeCountry = storeCountry,
@@ -490,77 +470,6 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private suspend fun getRemoteConfigs(): Map<String, RemoteConfigValue> {
-        try {
-            remoteConfig.fetch()
-            Timber.d("[remote_configs] fetched successfully")
-        } catch (e: Throwable) {
-            Timber.e(e, "[remote_configs] fetch failed, using cached values")
-        }
-
-        val configs = remoteConfig.getAll()
-
-        Timber.d(
-            "[remote_configs] loaded count=%d, keys=[%s]",
-            configs.size,
-            configs.keys.joinToString(),
-        )
-
-        return configs
-    }
-
-    private fun resolveExperimentVariants(
-        configs: Map<String, RemoteConfigValue>?,
-        matchingContext: RemoteConfigMatchingContext,
-    ): Map<String, String> {
-        if (configs.isNullOrEmpty()) {
-            Timber.w("[ab_tests] no configs received, returning empty assignments")
-            return emptyMap()
-        }
-
-        val parameters = configuration.remoteConfigParameters.parameters
-
-        val configsWithTarget = configs.filter {
-            parameters[it.key]?.target != null
-        }
-
-        if (configsWithTarget.isEmpty()) {
-            Timber.d("[ab_tests] no targeted configs found out of %d total", configs.size)
-            return emptyMap()
-        }
-
-        Timber.d(
-            "[ab_tests] processing %d targeted configs out of %d total",
-            configsWithTarget.size,
-            configs.size,
-        )
-
-        val experimentAssignments = configsWithTarget.mapValues {
-            val parameter = parameters[it.key]
-            val rawValue = it.value.rawValue
-
-            when {
-                rawValue.isNullOrBlank() -> ExperimentVariant.NONE
-                parameter?.target?.matches(matchingContext) != true -> ExperimentVariant.NONE
-                rawValue.startsWith(ExperimentVariant.NONE_PREFIX) -> ExperimentVariant.NONE
-                else -> rawValue
-            }
-        }
-
-        val activeCount = experimentAssignments.count { it.value != ExperimentVariant.NONE }
-        Timber.i(
-            "[ab_tests] resolved: total=%d, active=%d",
-            experimentAssignments.size,
-            activeCount,
-        )
-        Timber.d(
-            "[ab_tests] assignments:\n%s",
-            experimentAssignments.entries.joinToString(separator = "\n") { "  ${it.key} = ${it.value}" }
-        )
-
-        return experimentAssignments
-    }
-
     private fun sendAttributionStarted(
         appSetId: String?,
         advertisingId: AdvertisingId?,
@@ -583,59 +492,18 @@ internal class DefaultAppCoreServices(
         )
 
         analytics.setUserProperties(properties)
-        analytics.logEvent(
-            event = AnalyticsEvents.FRAMEWORK_ATTRIBUTION_STARTED,
-            properties = properties,
-        )
+
+        analytics.logEvent(AnalyticsEvents.ATTRIBUTION_STARTED, properties)
     }
 
-    private fun trackTestDistribution(
-        isFirstAppLaunch: Boolean,
-        storeCountry: String?,
-        attribution: Attribution,
-        experiments: Map<String, String>,
-    ) {
-        val attributionProperties = attribution.toMap()
-        val eventProperties = attributionProperties + experiments
+    private fun onUserAttributed(attribution: Attribution) {
+        Timber.i("[attribution] $attribution")
 
-        val userProperties = buildMap {
-            if (isFirstAppLaunch && attributionProperties.isNotEmpty()) {
-                putAll(attributionProperties)
-            }
-
-            putAll(experiments)
-
-            put("store_country", storeCountry ?: "unknown")
-
-            put(
-                "device_theme", if (configuration.context.isSystemInDarkTheme()) {
-                    "dark"
-                } else {
-                    "light"
-                }
-            )
-
-            attribution.attributionSource?.let { attributionSource ->
-                put("attribution_source", attributionSource.value)
-            }
-
-            put("android_framework_version", BuildConfig.SDK_VERSION)
-        }
-
-        amplitudeAnalytics.setUserProperties(userProperties)
-        amplitudeAnalytics.logEvent(AnalyticsEvents.TEST_DISTRIBUTION, eventProperties)
-        amplitudeAnalytics.flush()
-
-        Timber.i(
-            "[test_distribution] sent: firstLaunch=%b, storeCountry=%s, network=%s, experiments=%d, userProps=%d",
-            isFirstAppLaunch,
-            storeCountry,
-            attribution.mediaSource.value,
-            experiments.size,
-            userProperties.size,
-        )
-        Timber.d("[test_distribution] event properties: %s", eventProperties)
+        val properties = attribution.toMap()
+        analytics.setUserProperties(properties)
+        analytics.logEvent(AnalyticsEvents.ATTRIBUTION, properties)
     }
+
 
     private fun <T> async(name: String, block: suspend () -> T): Deferred<T?> {
         return internalScope.async {

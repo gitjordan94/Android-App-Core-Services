@@ -4,9 +4,9 @@ import android.content.Context
 import app.core.services.BuildConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
+import app.core.services.analytics.PurchaseEventLogger
 import app.core.services.appsflyer.error.AppsFlyerAttributionFailureException
 import app.core.services.appsflyer.error.AppsFlyerConversionFailureException
-import app.core.services.billing.logger.PurchaseEventLogger
 import app.core.services.billing.model.Purchase
 import app.core.services.consent.Consent
 import com.appsflyer.AFInAppEventType

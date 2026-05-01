@@ -9,6 +9,7 @@ fun Attribution.toMap(): Map<String, String> {
         "campaignName" to campaign,
         "adGroupName" to adGroup,
         "ad" to ad,
-        "deep_link_value" to deepLinkValue
+        "deep_link_value" to deepLinkValue,
+        "attribution_source" to attributionSource?.value
     )
 }

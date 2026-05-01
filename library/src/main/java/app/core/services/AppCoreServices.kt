@@ -2,14 +2,14 @@ package app.core.services
 
 import android.content.Context
 import app.core.services.AppCoreServices.Companion.configure
+import app.core.services.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.amplitude.AmplitudeConfig
-import app.core.services.analytics.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.attribution.AttributionServerConfig
 import app.core.services.billing.BillingClient
 import app.core.services.billing.BillingConfig
 import app.core.services.config.RemoteConfig
-import app.core.services.config.model.RemoteConfigParameters
+import app.core.services.config.RemoteConfigParameters
 import app.core.services.consent.Consent
 import app.core.services.core.AppCoreServiceProvider
 import app.core.services.core.model.BootstrapResult
