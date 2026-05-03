@@ -22,50 +22,46 @@ import com.google.android.play.core.install.model.UpdateAvailability
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
 
-/**
- * Manages in-app updates for the application.
- *
- * This class handles:
- * - Version checking against Firebase Remote Config
- * - Immediate update flows through Google Play
- * - Activity lifecycle management
- * - Update state persistence across app sessions
- */
 internal class GoogleInAppUpdateManager(
     private val context: Context,
     private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(context),
     private val versionProvider: VersionProvider = AppVersionProvider(context),
-    private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 ) : app.core.services.appupdates.AppUpdateManager {
 
-    // State management
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Unknown)
     override val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
 
-    // Thread-safe flags
-    private val isInitialized = AtomicBoolean(false)
-    private val hasPendingUpdate = AtomicBoolean(false)
-
-    // Update tracking
+    // Non-null value acts as both flag and payload for a pending update.
+    // Written from any thread (Remote Config callback), read on main thread.
+    @Volatile
     private var pendingRequiredVersion: Long? = null
+
+    // currentActivity is set only when activity is resumed, cleared on pause.
     private var currentActivity: ComponentActivity? = null
+
+    // Separate tracking for which activity owns the launcher — persists across pause/resume.
+    private var launcherOwnerActivity: ComponentActivity? = null
     private var appUpdateResultLauncher: ActivityResultLauncher<IntentSenderRequest>? = null
 
-    // Lifecycle management
+    private var retryCount = 0
+
     private val activityLifecycleCallbacks = createActivityLifecycleCallbacks()
 
-    /**
-     * Sets the minimum supported version code and triggers update flow if needed.
-     */
+    init {
+        (context.applicationContext as Application)
+            .registerActivityLifecycleCallbacks(activityLifecycleCallbacks)
+    }
+
     override fun setMinSupportedVersionCode(requiredVersion: Long) {
         val currentVersion = versionProvider.getVersionCode()
 
@@ -76,39 +72,28 @@ internal class GoogleInAppUpdateManager(
             }
 
             requiredVersion <= currentVersion -> {
-                Timber.i("No update required (min: $requiredVersion, current: $currentVersion)")
+                Timber.i("No update required (min=$requiredVersion, current=$currentVersion)")
                 _updateState.value = UpdateState.UpToDate(currentVersion)
             }
 
             else -> {
-                Timber.w("Update required! (min: $requiredVersion, current: $currentVersion)")
+                Timber.w("Update required (min=$requiredVersion, current=$currentVersion)")
                 _updateState.value = UpdateState.UpdateRequired(requiredVersion, currentVersion)
-
                 pendingRequiredVersion = requiredVersion
-
-                if (canStartUpdateFlow()) {
-                    requestAppUpdateInfo()
-                } else {
-                    Timber.d("Activity not ready — scheduling pending update")
-                    hasPendingUpdate.set(true)
-                }
+                if (isReadyToUpdate()) requestAppUpdateInfo()
             }
         }
     }
 
-    private fun canStartUpdateFlow(): Boolean {
-        return currentActivity != null && appUpdateResultLauncher != null
-    }
+    // Launcher must belong to the currently resumed activity — otherwise it's stale.
+    private fun isReadyToUpdate(): Boolean =
+        currentActivity != null
+                && appUpdateResultLauncher != null
+                && launcherOwnerActivity == currentActivity
 
     private fun checkForPendingUpdates() {
-        if (currentActivity == null) {
-            return
-        }
-
-        if (hasPendingUpdate.get() && appUpdateResultLauncher != null) {
-            Timber.i("Processing pending update (requiredVersion=$pendingRequiredVersion)")
-            hasPendingUpdate.set(false)
-            requestAppUpdateInfo()
+        if (pendingRequiredVersion != null) {
+            if (isReadyToUpdate()) requestAppUpdateInfo()
         } else {
             checkOngoingUpdate()
         }
@@ -116,14 +101,10 @@ internal class GoogleInAppUpdateManager(
 
     private fun createActivityLifecycleCallbacks() = object : ActivityLifecycleCallbacks {
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-            Timber.v("Activity created: ${activity.localClassName}")
-            if (activity is ComponentActivity) {
-                setupActivityForUpdates(activity)
-            }
+            if (activity is ComponentActivity) registerUpdateLauncher(activity)
         }
 
         override fun onActivityResumed(activity: Activity) {
-            Timber.v("Activity resumed: ${activity.localClassName}")
             if (activity is ComponentActivity) {
                 currentActivity = activity
                 checkForPendingUpdates()
@@ -131,16 +112,15 @@ internal class GoogleInAppUpdateManager(
         }
 
         override fun onActivityPaused(activity: Activity) {
-            Timber.v("Activity paused: ${activity.localClassName}")
-            if (activity == currentActivity) {
-                currentActivity = null
-            }
+            if (activity == currentActivity) currentActivity = null
         }
 
         override fun onActivityDestroyed(activity: Activity) {
-            Timber.v("Activity destroyed: ${activity.localClassName}")
-            if (activity == currentActivity) {
-                cleanupActivityResources()
+            // currentActivity is already null here (cleared in onPause), so track the
+            // launcher owner separately to avoid skipping cleanup on destroy.
+            if (activity == launcherOwnerActivity) {
+                appUpdateResultLauncher = null
+                launcherOwnerActivity = null
             }
         }
 
@@ -149,38 +129,43 @@ internal class GoogleInAppUpdateManager(
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
     }
 
-    private fun setupActivityForUpdates(activity: ComponentActivity) {
-        Timber.d("Setting up update launcher for: ${activity.localClassName}")
-
+    private fun registerUpdateLauncher(activity: ComponentActivity) {
         appUpdateResultLauncher = activity.registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()
         ) { result ->
-            handleUpdateResult(result.resultCode, activity)
+            handleUpdateResult(result.resultCode)
         }
-
-        currentActivity = activity
+        launcherOwnerActivity = activity
     }
 
-    private fun handleUpdateResult(resultCode: Int, activity: ComponentActivity) {
+    private fun handleUpdateResult(resultCode: Int) {
         when (resultCode) {
             RESULT_CANCELED -> {
-                Timber.w("User canceled mandatory update — closing app")
+                Timber.w("User cancelled mandatory update — closing app")
                 _updateState.value = UpdateState.UserCancelled
-                closeApplication(activity)
+                currentActivity?.let(::closeApplication)
             }
 
             ActivityResult.RESULT_IN_APP_UPDATE_FAILED -> {
-                Timber.e("In-app update failed, retrying...")
-                _updateState.value = UpdateState.UpdateFailed("Update failed, retrying")
-                // Retry after a brief delay
-                coroutineScope.launch {
-                    delay(2000)
-                    requestAppUpdateInfo()
+                if (retryCount < MAX_RETRIES) {
+                    retryCount++
+                    Timber.w("Update failed, retry $retryCount/$MAX_RETRIES")
+                    _updateState.value =
+                        UpdateState.UpdateFailed("Update failed, retrying ($retryCount/$MAX_RETRIES)")
+                    coroutineScope.launch {
+                        delay(RETRY_DELAY_MS)
+                        requestAppUpdateInfo()
+                    }
+                } else {
+                    Timber.e("Update failed after $MAX_RETRIES retries")
+                    retryCount = 0
+                    _updateState.value =
+                        UpdateState.UpdateFailed("Update failed after $MAX_RETRIES retries")
                 }
             }
 
             else -> {
-                Timber.d("Update result code: $resultCode")
+                retryCount = 0
                 _updateState.value = UpdateState.UpdateInProgress
             }
         }
@@ -190,34 +175,19 @@ internal class GoogleInAppUpdateManager(
         try {
             activity.finishAffinity()
         } catch (e: Exception) {
-            Timber.e(e, "Error during graceful app exit")
+            Timber.e(e, "Error during app exit")
         } finally {
             exitProcess(0)
         }
     }
 
-    private fun cleanupActivityResources() {
-        Timber.d("Cleaning up activity resources")
-        appUpdateResultLauncher?.unregister()
-        appUpdateResultLauncher = null
-        currentActivity = null
-    }
-
     private fun checkOngoingUpdate() {
         appUpdateManager.appUpdateInfo
             .addOnSuccessListener { appUpdateInfo ->
-                logAppUpdateInfo(appUpdateInfo)
-
-                when (appUpdateInfo.updateAvailability()) {
-                    UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> {
-                        Timber.i("Resuming in-progress update")
-                        _updateState.value = UpdateState.UpdateInProgress
-                        startUpdateFlow(appUpdateInfo)
-                    }
-
-                    else -> {
-                        Timber.d("No ongoing update to resume")
-                    }
+                if (appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                    Timber.i("Resuming in-progress update")
+                    _updateState.value = UpdateState.UpdateInProgress
+                    startUpdateFlow(appUpdateInfo)
                 }
             }
             .addOnFailureListener { error ->
@@ -231,8 +201,6 @@ internal class GoogleInAppUpdateManager(
 
         appUpdateManager.appUpdateInfo
             .addOnSuccessListener { appUpdateInfo ->
-                logAppUpdateInfo(appUpdateInfo)
-
                 when (appUpdateInfo.updateAvailability()) {
                     UpdateAvailability.UPDATE_AVAILABLE -> {
                         Timber.i("Update available, starting flow")
@@ -240,36 +208,31 @@ internal class GoogleInAppUpdateManager(
                         startUpdateFlow(appUpdateInfo)
                     }
 
-                    UpdateAvailability.UPDATE_NOT_AVAILABLE -> {
-                        Timber.i("No update available via Play Store")
-                        _updateState.value = UpdateState.NoUpdateAvailable
-                    }
-
                     else -> {
-                        Timber.d("Update not available at this time")
+                        Timber.i("No update available via Play Store")
+                        // Play Store has no update — required version is unattainable via this path.
+                        pendingRequiredVersion = null
                         _updateState.value = UpdateState.NoUpdateAvailable
                     }
                 }
             }
             .addOnFailureListener { error ->
-                Timber.e(error, "Failed to request app update info")
+                Timber.e(error, "Failed to request update info")
                 _updateState.value =
                     UpdateState.Error("Failed to check for updates: ${error.message}")
+                // pendingRequiredVersion intentionally NOT cleared — retries on next resume.
             }
     }
 
     private fun startUpdateFlow(appUpdateInfo: AppUpdateInfo) {
-        val launcher = appUpdateResultLauncher
-        if (launcher == null) {
+        val launcher = appUpdateResultLauncher ?: run {
             Timber.e("Cannot start update flow — launcher is null")
             _updateState.value = UpdateState.Error("Update flow not ready")
             return
         }
 
         try {
-            Timber.d("Starting immediate update flow")
             _updateState.value = UpdateState.StartingUpdate
-
             appUpdateManager.startUpdateFlowForResult(
                 appUpdateInfo,
                 launcher,
@@ -277,37 +240,25 @@ internal class GoogleInAppUpdateManager(
             )
         } catch (e: Exception) {
             Timber.e(e, "Failed to start update flow")
-            _updateState.value =
-                UpdateState.Error("Failed to start update: ${e.message}")
+            _updateState.value = UpdateState.Error("Failed to start update: ${e.message}")
         }
     }
 
-    private fun logAppUpdateInfo(appUpdateInfo: AppUpdateInfo) {
-        val availability = when (appUpdateInfo.updateAvailability()) {
-            UpdateAvailability.UPDATE_AVAILABLE -> "UPDATE_AVAILABLE"
-            UpdateAvailability.UPDATE_NOT_AVAILABLE -> "UPDATE_NOT_AVAILABLE"
-            UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> "DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS"
-            else -> "UNKNOWN (${appUpdateInfo.updateAvailability()})"
-        }
-
-        Timber.d("Update availability: $availability")
-    }
-
-    /**
-     * Clean up resources when the update manager is no longer needed.
-     * Should be called when the application is being destroyed.
-     */
     override fun cleanup() {
-        if (!isInitialized.get()) return
-
         try {
             (context.applicationContext as Application)
                 .unregisterActivityLifecycleCallbacks(activityLifecycleCallbacks)
-
-            cleanupActivityResources()
-            Timber.d("AppUpdateManager cleaned up successfully")
+            appUpdateResultLauncher = null
+            launcherOwnerActivity = null
+            currentActivity = null
+            coroutineScope.cancel()
         } catch (e: Exception) {
             Timber.e(e, "Error during AppUpdateManager cleanup")
         }
+    }
+
+    private companion object {
+        private const val MAX_RETRIES = 3
+        private const val RETRY_DELAY_MS = 2000L
     }
 }
