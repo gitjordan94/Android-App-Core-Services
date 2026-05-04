@@ -1,7 +1,8 @@
-package app.core.services.analytics.amplitude
+package app.core.services.amplitude.analytics
 
 import android.content.Context
 import app.core.services.BuildConfig
+import app.core.services.amplitude.AmplitudeConfig
 import app.core.services.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent

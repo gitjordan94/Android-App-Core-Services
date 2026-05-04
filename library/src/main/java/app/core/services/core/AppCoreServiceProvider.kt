@@ -5,7 +5,7 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import app.core.services.AppCoreServices
 import app.core.services.amplitude.experiment.AmplitudeRemoteConfig
 import app.core.services.analytics.CompositeAnalytics
-import app.core.services.analytics.amplitude.AmplitudeAnalytics
+import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.AppsFlyerUidProvider

@@ -9,7 +9,7 @@ import app.core.services.analytics.AnalyticsEvents
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_FAIL
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS
 import app.core.services.analytics.AnalyticsProperties
-import app.core.services.analytics.amplitude.AmplitudeAnalytics
+import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.analytics.toAnalyticsProperties
 import app.core.services.appsflyer.AppsFlyerAnalytics

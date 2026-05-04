@@ -1,7 +1,7 @@
 package app.core.services.analytics
 
 import app.core.services.appsflyer.AppsFlyerAnalytics
-import app.core.services.analytics.amplitude.AmplitudeAnalytics
+import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.billing.model.Purchase
 
 /**

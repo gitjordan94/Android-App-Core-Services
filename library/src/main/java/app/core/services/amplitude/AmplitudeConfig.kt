@@ -1,4 +1,4 @@
-package app.core.services.analytics.amplitude
+package app.core.services.amplitude
 
 data class AmplitudeConfig(
     val apiKey: String,

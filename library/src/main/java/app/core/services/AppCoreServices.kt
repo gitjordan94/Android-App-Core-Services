@@ -4,7 +4,7 @@ import android.content.Context
 import app.core.services.AppCoreServices.Companion.configure
 import app.core.services.amplitude.sessionreplay.SessionReplayConfig
 import app.core.services.analytics.Analytics
-import app.core.services.analytics.amplitude.AmplitudeConfig
+import app.core.services.amplitude.AmplitudeConfig
 import app.core.services.attribution.AttributionServerConfig
 import app.core.services.billing.BillingClient
 import app.core.services.billing.BillingConfig

@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.onEach
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.analytics.AnalyticsProperties.ACTIVE_SUBS
 import app.core.services.analytics.AnalyticsProperties.ALL_PURCHASED_PRODUCT_IDS
-import app.core.services.analytics.amplitude.AmplitudeAnalytics
+import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.analytics.firebase.FirebaseAnalytics
 import app.core.services.billing.model.Purchases
 import app.core.services.billing.model.Purchase
