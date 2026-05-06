@@ -23,7 +23,6 @@ internal object DefaultMediaSourceParser : MediaSourceParser {
             "instagram" to MediaSourceType.FACEBOOK,
             "ig" to MediaSourceType.FACEBOOK,
             "tiktok" to MediaSourceType.TIKTOK,
-            "tiktokglobal_int" to MediaSourceType.TIKTOK,
             "bytedanceglobal_int" to MediaSourceType.TIKTOK,
         )
 
