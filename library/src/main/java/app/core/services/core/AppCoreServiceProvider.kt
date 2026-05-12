@@ -34,7 +34,7 @@ import com.appsflyer.AppsFlyerLib
 
 internal object AppCoreServiceProvider {
     fun create(configuration: AppCoreServices.Configuration): AppCoreServices {
-        val firebaseAnalytics = FirebaseAnalytics()
+        val firebaseAnalytics = FirebaseAnalytics
 
         val amplitudeAnalytics = AmplitudeAnalytics(
             context = configuration.context,

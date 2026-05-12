@@ -5,5 +5,5 @@ package app.core.services.deeplink
  * Implement this interface to receive a [DeepLinkResult] when a deep link is processed.
  */
 fun interface DeepLinkListener {
-    fun onDeepLinkResult(deepLink: DeepLinkResult)
+    fun onDeepLink(deepLink: DeepLinkResult)
 }
