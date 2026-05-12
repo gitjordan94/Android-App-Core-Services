@@ -10,7 +10,7 @@ import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_FAIL
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS
 import app.core.services.analytics.AnalyticsProperties
 import app.core.services.amplitude.analytics.AmplitudeAnalytics
-import app.core.services.analytics.firebase.FirebaseAnalytics
+import app.core.services.firebase.FirebaseAnalytics
 import app.core.services.analytics.toAnalyticsProperties
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.ConversionDataResult
@@ -260,7 +260,9 @@ internal class DefaultAppCoreServices(
                     storeCountry = storeCountryDeferred,
                 )
 
-                launchDeviceIdAttach()
+                attachDeviceId()
+                sendApplicationInstall()
+
                 val jobs = launch(sources, deadline)
                 Timber.d("[load] launched %d post-source jobs, awaiting...", jobs.size)
                 jobs.joinAll()
@@ -285,11 +287,8 @@ internal class DefaultAppCoreServices(
         }
     }
 
-    private fun CoroutineScope.launch(
-        sources: LoadSources,
-        deadline: Long,
-    ): List<Job> = listOf(
-        launch("application_install") {
+    private fun sendApplicationInstall() {
+        internalScope.launch("application_install") {
             val uuid = appsFlyerAnalytics.appsFlyerUID
             if (uuid == null) {
                 Timber.w("[application_install] skipped: appsflyer uid is null")
@@ -302,7 +301,13 @@ internal class DefaultAppCoreServices(
             Timber.d("[application_install] sending install for uid=%s", uuid)
             attributionServerClient.install(uuid)
             Timber.d("[application_install] install sent")
-        },
+        }
+    }
+
+    private fun CoroutineScope.launch(
+        sources: LoadSources,
+        deadline: Long,
+    ): List<Job> = listOf(
         launch("first_launch") {
             val deviceInfo = sources.deviceInfo.awaitUntil(deadline)
             if (deviceInfo == null) {
@@ -334,25 +339,25 @@ internal class DefaultAppCoreServices(
         }
     )
 
-    private fun CoroutineScope.launchDeviceIdAttach() {
-        launch {
+    private fun attachDeviceId() {
+        internalScope.launch("attach_device_id") {
             try {
                 if (attributionServerClient == null) {
-                    Timber.d("[device_id_attach] skipped: attribution server client is not configured")
+                    Timber.d("[attach_device_id] skipped: attribution server client is not configured")
                     return@launch
                 }
                 val installUserId = attributionServerClient.getInstallUserId()
                 if (installUserId != null) {
-                    Timber.d("[device_id_attach] skipped: install user id already present")
+                    Timber.d("[attach_device_id] skipped: install user id already present")
                     return@launch
                 }
                 val deviceId = deviceIdProvider.provide()
-                Timber.d("[device_id_attach] applying device id to amplitude: %s", deviceId)
+                Timber.d("[attach_device_id] applying device id to amplitude: %s", deviceId)
                 amplitudeAnalytics.setDeviceId(deviceId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                Timber.e(e, "[device_id_attach] failed")
+                Timber.e(e, "[attach_device_id] failed")
             }
         }
     }

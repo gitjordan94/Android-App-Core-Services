@@ -6,7 +6,7 @@ import app.core.services.AppCoreServices
 import app.core.services.amplitude.experiment.AmplitudeRemoteConfig
 import app.core.services.analytics.CompositeAnalytics
 import app.core.services.amplitude.analytics.AmplitudeAnalytics
-import app.core.services.analytics.firebase.FirebaseAnalytics
+import app.core.services.firebase.FirebaseAnalytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.AppsFlyerUidProvider
 import app.core.services.appsflyer.DefaultAppsFlyerUidProvider
@@ -34,7 +34,7 @@ import com.appsflyer.AppsFlyerLib
 
 internal object AppCoreServiceProvider {
     fun create(configuration: AppCoreServices.Configuration): AppCoreServices {
-        val firebaseAnalytics = FirebaseAnalytics()
+        val firebaseAnalytics = FirebaseAnalytics
 
         val amplitudeAnalytics = AmplitudeAnalytics(
             context = configuration.context,

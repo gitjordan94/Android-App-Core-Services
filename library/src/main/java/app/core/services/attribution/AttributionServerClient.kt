@@ -6,10 +6,15 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.core.services.BuildConfig
+import app.core.services.attribution.installreferrer.GoogleInstallReferrerProvider
+import app.core.services.attribution.installreferrer.InstallReferrerProvider
 import app.core.services.attribution.model.AttributionInstallRequestBody
 import app.core.services.attribution.model.ExternalAuthorizationRequestBody
+import app.core.services.attribution.model.InstallParams
 import app.core.services.billing.BillingStoreCountryProvider
 import app.core.services.data.KeyValueStorage
+import app.core.services.firebase.FirebaseAnalytics
+import app.core.services.firebase.FirebaseAppInstanceId
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +24,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.UUID
 
@@ -48,7 +52,9 @@ internal interface AttributionServerClient {
                 ),
                 billingStoreCountryProvider = billingStoreCountryProvider,
                 keyValueStorage = keyValueStorage,
-                deviceIdProvider = deviceIdProvider
+                deviceIdProvider = deviceIdProvider,
+                installReferrerProvider = GoogleInstallReferrerProvider(applicationContext),
+                firebaseAppInstanceId = FirebaseAnalytics
             )
         }
     }
@@ -62,7 +68,9 @@ internal class AttributionServerClientImpl(
     private val billingStoreCountryProvider: BillingStoreCountryProvider,
     private val deviceIdProvider: DeviceIdProvider,
     private val keyValueStorage: KeyValueStorage,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val installReferrerProvider: InstallReferrerProvider,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val firebaseAppInstanceId: FirebaseAppInstanceId,
 ) : AttributionServerClient {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
@@ -131,8 +139,18 @@ internal class AttributionServerClientImpl(
                 "App version name is required but was null."
             }
 
-            val advertisingId = withContext(dispatcher) {
-                advertisingIdProvider.provide()
+            val advertisingId = advertisingIdProvider.provide()
+
+            val installParams = installReferrerProvider.getInstallReferrer()?.let {
+                InstallParams(
+                    installReferrer = it.installReferrer,
+                    referrerClickTimestampSeconds = it.referrerClickTimestampSeconds,
+                    installBeginTimestampSeconds = it.installBeginTimestampSeconds,
+                    googlePlayInstant = it.googlePlayInstant,
+                    referrerClickTimestampServerSeconds = it.referrerClickTimestampServerSeconds,
+                    installBeginTimestampServerSeconds = it.installBeginTimestampServerSeconds,
+                    installVersion = it.installVersion
+                )
             }
 
             val request = AttributionInstallRequestBody(
@@ -142,10 +160,12 @@ internal class AttributionServerClientImpl(
                 limitAdTracking = advertisingId.isLimitAdTrackingEnabled,
                 advertisingId = advertisingId.id ?: UUID.randomUUID().toString(),
                 appsflyerId = userId,
-                storeCountry = billingStoreCountryProvider.getStoreCountry() ?: "Unknown",
+                storeCountry = billingStoreCountryProvider.getStoreCountry(),
                 environment = config.environment.value,
                 externalAuthorization = config.externalAuthorization,
-                deviceId = deviceIdProvider.provide()
+                deviceId = deviceIdProvider.provide(),
+                installParams = installParams,
+                firebaseAppInstanceId = firebaseAppInstanceId.getAppInstanceId()
             )
 
             val installAttributionResult = attributionServerApi.install(request)

@@ -1,4 +1,4 @@
-package app.core.services.analytics.firebase
+package app.core.services.firebase
 
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
@@ -12,7 +12,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
 import kotlinx.coroutines.tasks.await
 
-internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
+internal object FirebaseAnalytics : Analytics, PurchaseEventLogger, FirebaseAppInstanceId {
     private val analytics by lazy { Firebase.analytics }
 
     internal fun setUserId(userId: String?) {
@@ -51,7 +51,7 @@ internal class FirebaseAnalytics : Analytics, PurchaseEventLogger {
         }
     }
 
-    internal suspend fun getAppInstanceId(): String? {
+    override suspend fun getAppInstanceId(): String? {
         return analytics.appInstanceId.await()
     }
 }
