@@ -309,11 +309,9 @@ internal class DefaultAppCoreServices(
         deadline: Long,
     ): List<Job> = listOf(
         launch("first_launch") {
+            val isFirstLaunch = sources.isFirstLaunch.awaitUntil(deadline) ?: true
             val deviceInfo = sources.deviceInfo.awaitUntil(deadline)
-            if (deviceInfo == null) {
-                Timber.w("[first_launch] device info unavailable (timeout or failure)")
-            }
-            onFirstLaunch(deviceInfo)
+            if (isFirstLaunch) onFirstLaunch(deviceInfo)
         },
         launch("attribution_started") {
             val appSetId = sources.appSetId.awaitUntil(deadline)
@@ -397,8 +395,11 @@ internal class DefaultAppCoreServices(
     }
 
     private suspend fun onFirstLaunch(deviceInfo: DeviceInfo?) {
-        val deviceInfoProperties =
-            deviceInfo?.toAnalyticsProperties()?.takeIf { it.isNotEmpty() }
+        if (deviceInfo == null) {
+            Timber.w("[first_launch] device info unavailable (timeout or failure)")
+        }
+
+        val deviceInfoProperties = deviceInfo?.toAnalyticsProperties()?.takeIf { it.isNotEmpty() }
 
         if (deviceInfoProperties != null) {
             Timber.d("[first_launch] applying %d device info properties", deviceInfoProperties.size)
