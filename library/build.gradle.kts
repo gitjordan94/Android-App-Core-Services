@@ -26,7 +26,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.5.1\""
+            "\"1.5.2\""
         )
 
         buildConfigField(
@@ -85,12 +85,18 @@ dependencies {
 
     // Analytics
     implementation("com.amplitude:analytics-android:1.28.1")
+    implementation("com.amplitude:experiment-android-client:1.15.0")
     implementation("com.amplitude:plugin-session-replay-android:0.26.0")
     api("com.appsflyer:af-android-sdk:$afVersion")
 
+    // Database
+    val roomVersion = "2.8.4"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+
     // Firebase
     api(platform("com.google.firebase:firebase-bom:34.12.0"))
-    implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
 
     // ATT
@@ -101,7 +107,7 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.7")
 
     // Network
-    val ktorVersion = "3.4.1"
+    val ktorVersion = "3.0.3"
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-android:$ktorVersion")
     implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
