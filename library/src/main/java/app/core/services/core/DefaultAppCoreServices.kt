@@ -237,12 +237,18 @@ internal class DefaultAppCoreServices(
 
                 val featureFlagsDeferred = async("feature_flags") {
                     val attribution = attributionDeferred.await()
+
                     if (attribution == null || attribution.mediaSource.value.isEmpty()) {
                         Timber.d("[feature_flags] skipped: attribution null or organic")
-                        return@async
+                        return@async featureFlagsInitialDeferred.await()
                     }
-                    Timber.d("[feature_flags] attribution=%s, proceeding", attribution.mediaSource.value)
+                    Timber.d(
+                        "[feature_flags] attribution=%s, proceeding",
+                        attribution.mediaSource.value
+                    )
+
                     val storeCountry = storeCountryDeferred.awaitUntil(deadline)
+
                     fetchFeatureFlags(storeCountry = storeCountry, attribution = attribution)
                 }
 
@@ -280,7 +286,7 @@ internal class DefaultAppCoreServices(
 
                 val result = buildResult(sources)
 
-                internalScope.launch("framework_finished") {
+                internalScope.launch {
                     onFrameworkFinished(result)
                 }
 
@@ -369,16 +375,15 @@ internal class DefaultAppCoreServices(
     }
 
     private fun CoroutineScope.launch(name: String, block: suspend () -> Unit): Job = launch {
-        val started = SystemClock.elapsedRealtime()
-        Timber.d("[%s] start", name)
-        try {
-            block()
-            Timber.d("[%s] done in %d ms", name, SystemClock.elapsedRealtime() - started)
-        } catch (e: CancellationException) {
-            Timber.d("[%s] cancelled after %d ms", name, SystemClock.elapsedRealtime() - started)
-            throw e
-        } catch (e: Throwable) {
-            Timber.e(e, "[%s] failed after %d ms", name, SystemClock.elapsedRealtime() - started)
+        measureExecutionTime(name) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                Timber.d("[%s] cancelled", name)
+                throw e
+            } catch (e: Throwable) {
+                Timber.e(e, "[%s] load failed", name)
+            }
         }
     }
 
@@ -522,15 +527,14 @@ internal class DefaultAppCoreServices(
     private suspend fun fetchFeatureFlags(
         storeCountry: String?,
         attribution: Attribution? = null,
-    ) {
+    ): Boolean {
         val tag = if (attribution != null) "feature_flags" else "feature_flags_initial"
         val userId = amplitudeAnalytics.getUserId()
         val userProperties = mapOfNotNull(AnalyticsProperties.STORE_COUNTRY to storeCountry)
             .plus(attribution?.toMap().orEmpty())
 
         Timber.d("[%s] fetch: userId=%s, storeCountry=%s", tag, userId, storeCountry)
-        remoteConfig.fetch(userId = userId, userProperties = userProperties)
-        Timber.i("[%s] done", tag)
+        return remoteConfig.fetch(userId = userId, userProperties = userProperties)
     }
 
     private fun sendAttributionStarted(

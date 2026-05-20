@@ -8,8 +8,8 @@ import kotlinx.coroutines.Deferred
 internal data class LoadSources(
     val isFirstLaunch: Deferred<Boolean?>,
     val attribution: Deferred<Attribution?>,
-    val featureFlagsInitialDeferred: Deferred<Unit?>,
-    val featureFlags: Deferred<Unit?>,
+    val featureFlagsInitialDeferred: Deferred<Boolean?>,
+    val featureFlags: Deferred<Boolean?>,
     val deviceInfo: Deferred<DeviceInfo?>,
     val appSetId: Deferred<String?>,
     val advertisingId: Deferred<AdvertisingId?>,

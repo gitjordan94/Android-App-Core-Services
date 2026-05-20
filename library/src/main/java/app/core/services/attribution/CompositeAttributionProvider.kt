@@ -1,5 +1,6 @@
 package app.core.services.attribution
 
+import app.core.services.core.DefaultAppCoreServices.Companion.MAX_TIMEOUT_MS
 import app.core.services.core.model.Attribution
 import app.core.services.core.model.isOrganic
 import kotlinx.coroutines.TimeoutCancellationException
@@ -27,7 +28,7 @@ import timber.log.Timber
  * @property providers The list of individual attribution providers to query.
  */
 internal class CompositeAttributionProvider(
-    private val timeout: Long = 10_000,
+    private val timeout: Long = MAX_TIMEOUT_MS,
     private val providers: List<AttributionProvider>,
 ) : AttributionProvider {
 
