@@ -194,8 +194,9 @@ internal class DefaultAppCoreServices(
             )
 
             measureExecutionTime("framework_load") {
-                val deadline = SystemClock.elapsedRealtime() + MAX_TIMEOUT_MS
-                Timber.d("[load] deadline set to %d ms from now", MAX_TIMEOUT_MS)
+                val loadStart = SystemClock.elapsedRealtime()
+                val deadline = loadStart + MAX_TIMEOUT_MS
+                Timber.i("[load] begin: timeout=%d ms", MAX_TIMEOUT_MS)
 
                 val isFirstLaunchDeferred = async("first_launch") {
                     isFirstLaunch != false && preferencesDataStore.isFirstLaunch()
@@ -237,10 +238,10 @@ internal class DefaultAppCoreServices(
                 val featureFlagsDeferred = async("feature_flags") {
                     val attribution = attributionDeferred.await()
                     if (attribution == null || attribution.mediaSource.value.isEmpty()) {
-                        Timber.d("[feature_flags] skipped: no attribution within deadline")
+                        Timber.d("[feature_flags] skipped: attribution null or organic")
                         return@async
                     }
-
+                    Timber.d("[feature_flags] attribution=%s, proceeding", attribution.mediaSource.value)
                     val storeCountry = storeCountryDeferred.awaitUntil(deadline)
                     fetchFeatureFlags(storeCountry = storeCountry, attribution = attribution)
                 }
@@ -263,6 +264,7 @@ internal class DefaultAppCoreServices(
                 val jobs = launch(sources, deadline)
                 Timber.d("[load] launched %d post-source jobs, awaiting...", jobs.size)
                 jobs.joinAll()
+                Timber.d("[load] jobs joined in %d ms", SystemClock.elapsedRealtime() - loadStart)
 
                 internalScope.launch("force_update") {
                     sources.featureFlagsInitialDeferred.await()
@@ -283,19 +285,14 @@ internal class DefaultAppCoreServices(
                 }
 
                 if (!sources.featureFlags.isCompleted) {
+                    Timber.d("[load] feature_flags pending — scheduling background refresh")
                     internalScope.launch("feature_flags_background_update") {
                         sources.featureFlags.join()
-                        Timber.i("[feature_flags] background update complete")
+                        Timber.i("[feature_flags] background refresh complete")
                     }
                 }
 
-                Timber.i(
-                    "[load] complete: firstLaunch=%b, storeCountry=%s, network=%s, purchases=%s",
-                    result.isFirstLaunch,
-                    result.storeCountry,
-                    result.attribution.mediaSource.value,
-                    result.purchases,
-                )
+                Timber.i("[load] complete in %d ms", SystemClock.elapsedRealtime() - loadStart)
 
                 _bootstrapFlow.value = result
                 result
@@ -387,15 +384,20 @@ internal class DefaultAppCoreServices(
 
     private fun buildResult(sources: LoadSources): BootstrapResult {
         val attribution = sources.attribution.getCompletedOrNull() ?: run {
-            Timber.w("[build_result] attribution not completed in time, using empty MediaSource")
+            Timber.w("[build_result] attribution timed out — defaulting to empty MediaSource")
             Attribution(MediaSource())
         }
         val purchases = sources.purchases.getCompletedOrNull()
         val storeCountry = sources.storeCountry.getCompletedOrNull()
         val isFirstLaunch = sources.isFirstLaunch.getCompletedOrNull() ?: false
 
-        if (purchases == null) Timber.w("[build_result] purchases not completed in time")
-        if (storeCountry == null) Timber.w("[build_result] store country not completed in time")
+        Timber.i(
+            "[build_result] mediaSource=%s | storeCountry=%s | purchases=%b | firstLaunch=%b",
+            attribution.mediaSource.value.ifEmpty { "organic" },
+            storeCountry ?: "timeout",
+            purchases != null,
+            isFirstLaunch,
+        )
 
         return BootstrapResult(
             attribution = attribution,
@@ -521,18 +523,14 @@ internal class DefaultAppCoreServices(
         storeCountry: String?,
         attribution: Attribution? = null,
     ) {
+        val tag = if (attribution != null) "feature_flags" else "feature_flags_initial"
         val userId = amplitudeAnalytics.getUserId()
         val userProperties = mapOfNotNull(AnalyticsProperties.STORE_COUNTRY to storeCountry)
             .plus(attribution?.toMap().orEmpty())
 
-        Timber.d(
-            "[feature_flags] fetching: attribution=%s, storeCountry=%s",
-            attribution?.mediaSource?.value ?: "none",
-            storeCountry,
-        )
-
+        Timber.d("[%s] fetch: userId=%s, storeCountry=%s", tag, userId, storeCountry)
         remoteConfig.fetch(userId = userId, userProperties = userProperties)
-        Timber.i("[feature_flags] complete")
+        Timber.i("[%s] done", tag)
     }
 
     private fun sendAttributionStarted(
