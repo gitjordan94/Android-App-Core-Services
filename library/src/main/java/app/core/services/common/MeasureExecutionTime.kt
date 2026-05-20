@@ -13,8 +13,8 @@ import kotlin.time.measureTimedValue
  * @return The value returned by the 'body' lambda.
  */
 inline fun <T> measureExecutionTime(tag: String, body: () -> T): T {
-    Timber.d("[$tag] Starting execution...")
+    Timber.d("[%s] Starting execution...", tag)
     val timedValue = measureTimedValue(body)
-    Timber.d("[$tag] Execution completed in  ${timedValue.duration}.")
+    Timber.d("[%s] Execution completed in  %s.", tag, timedValue.duration)
     return timedValue.value
 }

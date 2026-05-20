@@ -27,7 +27,7 @@ import timber.log.Timber
  * @property providers The list of individual attribution providers to query.
  */
 internal class CompositeAttributionProvider(
-    private val timeout: Long,
+    private val timeout: Long = 10_000,
     private val providers: List<AttributionProvider>,
 ) : AttributionProvider {
 

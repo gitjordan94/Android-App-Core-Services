@@ -14,6 +14,7 @@ import app.core.services.consent.Consent
 import app.core.services.core.AppCoreServiceProvider
 import app.core.services.core.model.BootstrapResult
 import app.core.services.deeplink.DeepLinkManager
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The main entry point for the App Core Services SDK.
@@ -35,6 +36,16 @@ interface AppCoreServices {
 
     /** Remote configuration module for fetching and reading remote values. */
     val remoteConfig: RemoteConfig
+
+    /**
+     * Emits [BootstrapResult] progressively as data becomes available:
+     * - `null` while loading has not started or is in progress
+     * - [BootstrapResult] with `featureFlagsReady = false` once the initial FF fetch completes (no attribution)
+     * - [BootstrapResult] with `featureFlagsReady = true` once FF are refreshed with attribution data
+     *
+     * Collect this flow on the splash screen to decide when to proceed.
+     */
+    val bootstrapFlow: StateFlow<BootstrapResult?>
 
     /** Billing module for managing products, purchases, and subscriptions. */
     val billingClient: BillingClient

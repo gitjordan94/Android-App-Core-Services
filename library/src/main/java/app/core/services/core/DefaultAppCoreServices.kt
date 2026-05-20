@@ -4,13 +4,12 @@ import android.content.Context
 import android.os.SystemClock
 import app.core.services.AppCoreServices
 import app.core.services.BuildConfig
+import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvents
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_FAIL
 import app.core.services.analytics.AnalyticsEvents.AF_CONVERSION_DATA_SUCCESS
 import app.core.services.analytics.AnalyticsProperties
-import app.core.services.amplitude.analytics.AmplitudeAnalytics
-import app.core.services.firebase.FirebaseAnalytics
 import app.core.services.analytics.toAnalyticsProperties
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.ConversionDataResult
@@ -26,7 +25,7 @@ import app.core.services.common.getCompletedOrNull
 import app.core.services.common.mapOfNotNull
 import app.core.services.common.measureExecutionTime
 import app.core.services.config.RemoteConfig
-import app.core.services.config.RemoteConfigParams
+import app.core.services.config.RemoteConfigParams.MIN_SUPPORTED_APP_VERSION
 import app.core.services.consent.Consent
 import app.core.services.core.appsetid.AppSetIdProvider
 import app.core.services.core.model.Attribution
@@ -38,6 +37,7 @@ import app.core.services.data.PreferencesDataStore
 import app.core.services.deeplink.DeepLinkManager
 import app.core.services.deviceinfo.DeviceInfo
 import app.core.services.deviceinfo.DeviceInfoProvider
+import app.core.services.firebase.FirebaseAnalytics
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -50,6 +50,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -95,7 +97,8 @@ internal class DefaultAppCoreServices(
 
     private val consentFlow = MutableStateFlow<Consent?>(null)
 
-    private var bootstrapResult: BootstrapResult? = null
+    private val _bootstrapFlow = MutableStateFlow<BootstrapResult?>(null)
+    override val bootstrapFlow: StateFlow<BootstrapResult?> = _bootstrapFlow.asStateFlow()
 
     override fun setConsent(consent: Consent) {
         Timber.i(
@@ -149,7 +152,7 @@ internal class DefaultAppCoreServices(
         }.await()
     }
 
-    override fun getBootstrapResult(): BootstrapResult? = bootstrapResult
+    override fun getBootstrapResult(): BootstrapResult? = _bootstrapFlow.value
 
     override fun getUserId(): String? {
         return appsFlyerAnalytics.appsFlyerUID
@@ -226,33 +229,27 @@ internal class DefaultAppCoreServices(
                     billingClient.getStoreCountry()
                 }
 
-                val remoteConfigsDeferred = async("remote_configs") {
-                    val attribution = attributionDeferred.awaitUntil(deadline)
-                        ?: Attribution(MediaSource())
+                val featureFlagsInitialDeferred = async("feature_flags_initial") {
+                    val storeCountry = storeCountryDeferred.awaitUntil(deadline)
+                    fetchFeatureFlags(storeCountry = storeCountry)
+                }
+
+                val featureFlagsDeferred = async("feature_flags") {
+                    val attribution = attributionDeferred.await()
+                    if (attribution == null || attribution.mediaSource.value.isEmpty()) {
+                        Timber.d("[feature_flags] skipped: no attribution within deadline")
+                        return@async
+                    }
 
                     val storeCountry = storeCountryDeferred.awaitUntil(deadline)
-
-                    val userId = amplitudeAnalytics.getUserId()
-
-                    val userProperties = attribution.toMap()
-                        .plus(AnalyticsProperties.STORE_COUNTRY to storeCountry)
-
-                    Timber.d(
-                        "[remote_configs] fetching feature flags from Amplitude: userId: %s, properties: %s",
-                        userId,
-                        userProperties
-                    )
-
-                    remoteConfig.fetch(
-                        userId = userId,
-                        userProperties = userProperties
-                    )
+                    fetchFeatureFlags(storeCountry = storeCountry, attribution = attribution)
                 }
 
                 val sources = LoadSources(
                     isFirstLaunch = isFirstLaunchDeferred,
                     attribution = attributionDeferred,
-                    remoteConfigs = remoteConfigsDeferred,
+                    featureFlagsInitialDeferred = featureFlagsInitialDeferred,
+                    featureFlags = featureFlagsDeferred,
                     deviceInfo = deviceInfoDeferred,
                     appSetId = appSetIdDeferred,
                     advertisingId = advertisingIdDeferred,
@@ -267,11 +264,29 @@ internal class DefaultAppCoreServices(
                 Timber.d("[load] launched %d post-source jobs, awaiting...", jobs.size)
                 jobs.joinAll()
 
-                val result = buildResult(sources)
-                bootstrapResult = result
+                internalScope.launch("force_update") {
+                    sources.featureFlagsInitialDeferred.await()
 
-                launch {
+                    runCatching {
+                        val minVersion = remoteConfig.getLong(MIN_SUPPORTED_APP_VERSION)
+                        minVersion?.let(appUpdateManager::setMinSupportedVersionCode)
+                        Timber.i("[force_update] min supported version applied: %d", minVersion)
+                    }.onFailure {
+                        Timber.e(it, "[force_update] failed to apply min supported version")
+                    }
+                }
+
+                val result = buildResult(sources)
+
+                internalScope.launch("framework_finished") {
                     onFrameworkFinished(result)
+                }
+
+                if (!sources.featureFlags.isCompleted) {
+                    internalScope.launch("feature_flags_background_update") {
+                        sources.featureFlags.join()
+                        Timber.i("[feature_flags] background update complete")
+                    }
                 }
 
                 Timber.i(
@@ -279,9 +294,10 @@ internal class DefaultAppCoreServices(
                     result.isFirstLaunch,
                     result.storeCountry,
                     result.attribution.mediaSource.value,
-                    result.purchases
+                    result.purchases,
                 )
 
+                _bootstrapFlow.value = result
                 result
             }
         }
@@ -318,22 +334,17 @@ internal class DefaultAppCoreServices(
             val advertisingId = sources.advertisingId.awaitUntil(deadline)
             sendAttributionStarted(appSetId, advertisingId)
         },
+        launch("initial_feature_flags") {
+            sources.featureFlagsInitialDeferred.awaitUntil(deadline)
+        },
         launch("attribution") {
             val attribution = sources.attribution.awaitUntil(deadline)
                 ?: Attribution(MediaSource())
 
             onUserAttributed(attribution)
         },
-        launch("force_update") {
-            sources.remoteConfigs.awaitUntil(deadline)
-
-            runCatching {
-                val minVersion = remoteConfig.getLong(RemoteConfigParams.MIN_SUPPORTED_APP_VERSION)
-                minVersion?.let(appUpdateManager::setMinSupportedVersionCode)
-                Timber.i("[force_update] min supported version applied: %d", minVersion)
-            }.onFailure {
-                Timber.e(it, "[force_update] failed to apply min supported version")
-            }
+        launch("feature_flags") {
+            sources.featureFlags.awaitUntil(deadline)
         }
     )
 
@@ -506,6 +517,24 @@ internal class DefaultAppCoreServices(
         }
     }
 
+    private suspend fun fetchFeatureFlags(
+        storeCountry: String?,
+        attribution: Attribution? = null,
+    ) {
+        val userId = amplitudeAnalytics.getUserId()
+        val userProperties = mapOfNotNull(AnalyticsProperties.STORE_COUNTRY to storeCountry)
+            .plus(attribution?.toMap().orEmpty())
+
+        Timber.d(
+            "[feature_flags] fetching: attribution=%s, storeCountry=%s",
+            attribution?.mediaSource?.value ?: "none",
+            storeCountry,
+        )
+
+        remoteConfig.fetch(userId = userId, userProperties = userProperties)
+        Timber.i("[feature_flags] complete")
+    }
+
     private fun sendAttributionStarted(
         appSetId: String?,
         advertisingId: AdvertisingId?,
@@ -541,8 +570,6 @@ internal class DefaultAppCoreServices(
     }
 
     private fun onFrameworkFinished(result: BootstrapResult) {
-        Timber.d("Attribution finished.")
-
         val properties = result.attribution.toMap()
             .plus(AnalyticsProperties.STORE_COUNTRY to (result.storeCountry ?: "unknown"))
 

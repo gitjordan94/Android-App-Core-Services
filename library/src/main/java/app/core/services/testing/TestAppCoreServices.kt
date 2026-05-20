@@ -13,6 +13,9 @@ import app.core.services.core.util.toMap
 import app.core.services.deeplink.DeepLinkManager
 import app.core.services.deeplink.NoOpDeepLinkManager
 import app.core.services.testing.config.FakeRemoteConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.util.UUID
@@ -25,6 +28,9 @@ class TestAppCoreServices(
 ) : AppCoreServices {
     @JvmField
     var bootstrapResult: BootstrapResult? = null
+
+    private val _bootstrapFlow = MutableStateFlow<BootstrapResult?>(null)
+    override val bootstrapFlow: StateFlow<BootstrapResult?> = _bootstrapFlow.asStateFlow()
 
     private val _userId by lazy { UUID.randomUUID().toString() + "R" }
 
@@ -52,12 +58,12 @@ class TestAppCoreServices(
             Timber.e(e, "Failed to fetch remote config")
         }
 
-        return bootstrapResult ?: BootstrapResult(
+        return (bootstrapResult ?: BootstrapResult(
             attribution = attribution,
             storeCountry = storeCountry,
             purchases = billingClient.getPurchases(),
-            isFirstLaunch = isFirstLaunch ?: true
-        ).also { bootstrapResult = it }
+            isFirstLaunch = isFirstLaunch ?: true,
+        ).also { bootstrapResult = it }).also { _bootstrapFlow.value = it }
     }
 
     override fun getBootstrapResult(): BootstrapResult? = bootstrapResult

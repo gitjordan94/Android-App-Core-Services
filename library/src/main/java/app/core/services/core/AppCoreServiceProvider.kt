@@ -3,10 +3,9 @@ package app.core.services.core
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import app.core.services.AppCoreServices
+import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.amplitude.experiment.AmplitudeRemoteConfig
 import app.core.services.analytics.CompositeAnalytics
-import app.core.services.amplitude.analytics.AmplitudeAnalytics
-import app.core.services.firebase.FirebaseAnalytics
 import app.core.services.appsflyer.AppsFlyerAnalytics
 import app.core.services.appsflyer.AppsFlyerUidProvider
 import app.core.services.appsflyer.DefaultAppsFlyerUidProvider
@@ -24,12 +23,12 @@ import app.core.services.billing.PurchasesPreferencesDataStore
 import app.core.services.billing.google.BillingClientWrapper
 import app.core.services.billing.google.GoogleBillingClient
 import app.core.services.billing.google.ObfuscatedUserIdProvider
-import app.core.services.core.DefaultAppCoreServices.Companion.MAX_TIMEOUT_MS
 import app.core.services.core.appsetid.AndroidAppSetIdProvider
 import app.core.services.data.KeyValueStorageImpl
 import app.core.services.data.PreferencesDataStore
 import app.core.services.deeplink.af.AppsFlyerDeepLinkManager
 import app.core.services.deviceinfo.DeviceInfoProviderFactory
+import app.core.services.firebase.FirebaseAnalytics
 import com.appsflyer.AppsFlyerLib
 
 internal object AppCoreServiceProvider {
@@ -107,7 +106,6 @@ internal object AppCoreServiceProvider {
             // Attribution
             attributionServerClient = attributionServerClient,
             attributionProvider = CompositeAttributionProvider(
-                timeout = MAX_TIMEOUT_MS,
                 providers = listOf(
                     appsFlyerAttributionProvider,
                     googlePlayInstallReferrerAttributionProvider
