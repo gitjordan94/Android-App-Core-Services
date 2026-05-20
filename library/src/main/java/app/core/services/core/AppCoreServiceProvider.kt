@@ -14,7 +14,6 @@ import app.core.services.appupdates.GoogleInAppUpdateManager
 import app.core.services.attribution.AdvertisingIdProvider
 import app.core.services.attribution.AppsflyerDeviceIdProvider
 import app.core.services.attribution.AttributionServerClient
-import app.core.services.attribution.CompositeAttributionProvider
 import app.core.services.attribution.GooglePlayInstallReferrerAttributionProvider
 import app.core.services.billing.AnalyticsBillingClientDecorator
 import app.core.services.billing.BillingClient
@@ -89,28 +88,23 @@ internal object AppCoreServiceProvider {
             null
         }
 
-        val appsFlyerAttributionProvider = AppsFlyerAttributionProvider(
+        val internalAttributionProvider = GooglePlayInstallReferrerAttributionProvider(
+            applicationContext = configuration.context,
+            preferencesDataStore = preferencesDataStore,
+            analytics = amplitudeAnalytics
+        )
+
+        val externalAttributionProvider = AppsFlyerAttributionProvider(
             preferencesDataStore = preferencesDataStore,
             appsFlyerAnalytics = appsFlyerAnalytics,
         )
-
-        val googlePlayInstallReferrerAttributionProvider =
-            GooglePlayInstallReferrerAttributionProvider(
-                applicationContext = configuration.context,
-                preferencesDataStore = preferencesDataStore,
-                analytics = amplitudeAnalytics
-            )
 
         return DefaultAppCoreServices(
             configuration = configuration,
             // Attribution
             attributionServerClient = attributionServerClient,
-            attributionProvider = CompositeAttributionProvider(
-                providers = listOf(
-                    appsFlyerAttributionProvider,
-                    googlePlayInstallReferrerAttributionProvider
-                )
-            ),
+            internalAttributionProvider = internalAttributionProvider,
+            externalAttributionProvider = externalAttributionProvider,
             // Analytics
             amplitudeAnalytics = amplitudeAnalytics,
             firebaseAnalytics = firebaseAnalytics,

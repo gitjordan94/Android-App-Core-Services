@@ -32,6 +32,7 @@ import app.core.services.core.model.Attribution
 import app.core.services.core.model.BootstrapResult
 import app.core.services.core.model.LoadSources
 import app.core.services.core.model.MediaSource
+import app.core.services.core.model.isOrganic
 import app.core.services.core.util.toMap
 import app.core.services.data.PreferencesDataStore
 import app.core.services.deeplink.DeepLinkManager
@@ -48,6 +49,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,7 +82,8 @@ internal class DefaultAppCoreServices(
     private val configuration: AppCoreServices.Configuration,
     private val preferencesDataStore: PreferencesDataStore,
     coroutineDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val attributionProvider: AttributionProvider,
+    private val internalAttributionProvider: AttributionProvider,
+    private val externalAttributionProvider: AttributionProvider,
     private val deviceInfoProvider: DeviceInfoProvider,
     private val deviceIdProvider: DeviceIdProvider,
     private val appSetIdProvider: AppSetIdProvider,
@@ -196,17 +199,49 @@ internal class DefaultAppCoreServices(
             measureExecutionTime("framework_load") {
                 val loadStart = SystemClock.elapsedRealtime()
                 val deadline = loadStart + MAX_TIMEOUT_MS
+
                 Timber.i("[load] begin: timeout=%d ms", MAX_TIMEOUT_MS)
 
                 val isFirstLaunchDeferred = async("first_launch") {
                     isFirstLaunch != false && preferencesDataStore.isFirstLaunch()
                 }
-                val attributionDeferred = async("attribution") {
-                    attributionProvider.provide()
+
+                val internalAttributionDeferred = async("internal_attribution") {
+                    internalAttributionProvider.provide()
                 }
+
+                val externalAttributionDeferred = async("external_attribution") {
+                    externalAttributionProvider.provide()
+                }
+
+                fun getAttribution(tag: String, deadline: Long) = async(tag) {
+                    val internal = async {
+                        internalAttributionDeferred.awaitUntil(deadline)
+                    }
+
+                    val external = async {
+                        externalAttributionDeferred.awaitUntil(deadline)
+                    }
+
+                    val attribution = listOf(internal, external).awaitAll()
+
+                    attribution
+                        .firstOrNull { !it.isOrganic }
+                        ?: attribution.firstOrNull()
+                        ?: Attribution()
+                }
+
+                val initialAttribution = getAttribution(
+                    tag = "initial_attribution",
+                    deadline = loadStart + INITIAL_ATTRIBUTION_TIMEOUT_MS
+                )
+
+                val attribution = getAttribution(tag = "attribution", deadline = deadline)
+
                 val deviceInfoDeferred = async("device_info") {
                     deviceInfoProvider.collectDeviceInfo()
                 }
+
                 val appSetIdDeferred = async("app_set_id") {
                     if (consentSnapshot == null || consentSnapshot.adStorage) {
                         appSetIdProvider.provide()
@@ -231,30 +266,37 @@ internal class DefaultAppCoreServices(
                 }
 
                 val featureFlagsInitialDeferred = async("feature_flags_initial") {
+                    val attribution = initialAttribution.awaitUntil(deadline)
                     val storeCountry = storeCountryDeferred.awaitUntil(deadline)
-                    fetchFeatureFlags(storeCountry = storeCountry)
+
+                    fetchFeatureFlags(
+                        tag = "feature_flags_initial",
+                        storeCountry = storeCountry,
+                        attribution = attribution
+                    )
                 }
 
                 val featureFlagsDeferred = async("feature_flags") {
-                    val attribution = attributionDeferred.await()
+                    val initialAttribution = initialAttribution.awaitUntil(deadline)
+                    val attribution = attribution.awaitUntil(deadline)
 
-                    if (attribution == null || attribution.mediaSource.value.isEmpty()) {
+                    if (attribution == null || attribution.isOrganic || attribution.toMap() == initialAttribution?.toMap()) {
                         Timber.d("[feature_flags] skipped: attribution null or organic")
                         return@async featureFlagsInitialDeferred.await()
                     }
-                    Timber.d(
-                        "[feature_flags] attribution=%s, proceeding",
-                        attribution.mediaSource.value
-                    )
 
                     val storeCountry = storeCountryDeferred.awaitUntil(deadline)
 
-                    fetchFeatureFlags(storeCountry = storeCountry, attribution = attribution)
+                    fetchFeatureFlags(
+                        tag = "feature_flags",
+                        storeCountry = storeCountry,
+                        attribution = attribution
+                    )
                 }
 
                 val sources = LoadSources(
                     isFirstLaunch = isFirstLaunchDeferred,
-                    attribution = attributionDeferred,
+                    attribution = attribution,
                     featureFlagsInitialDeferred = featureFlagsInitialDeferred,
                     featureFlags = featureFlagsDeferred,
                     deviceInfo = deviceInfoDeferred,
@@ -525,15 +567,15 @@ internal class DefaultAppCoreServices(
     }
 
     private suspend fun fetchFeatureFlags(
+        tag: String,
         storeCountry: String?,
         attribution: Attribution? = null,
     ): Boolean {
-        val tag = if (attribution != null) "feature_flags" else "feature_flags_initial"
         val userId = amplitudeAnalytics.getUserId()
         val userProperties = mapOfNotNull(AnalyticsProperties.STORE_COUNTRY to storeCountry)
             .plus(attribution?.toMap().orEmpty())
 
-        Timber.d("[%s] fetch: userId=%s, storeCountry=%s", tag, userId, storeCountry)
+        Timber.d("[%s] fetch: userId=%s, userProperties=%s", tag, userId, userProperties)
         return remoteConfig.fetch(userId = userId, userProperties = userProperties)
     }
 
@@ -603,5 +645,6 @@ internal class DefaultAppCoreServices(
 
     internal companion object {
         const val MAX_TIMEOUT_MS = 6_500L
+        const val INITIAL_ATTRIBUTION_TIMEOUT_MS = 3_000L
     }
 }
