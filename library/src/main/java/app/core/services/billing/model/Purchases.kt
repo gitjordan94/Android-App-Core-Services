@@ -1,13 +1,19 @@
 package app.core.services.billing.model
 
-/**
- * @property activeSubscriptions active subscription productIds.
- * @property allPurchasedProductIds purchased productIds, active and inactive.
- */
+@Suppress("JavaDefaultMethodsNotOverriddenByDelegation")
 data class Purchases(
-    val activeSubscriptions: Set<String>,
+    val purchases: List<PurchaseDetails> = emptyList()
+) : List<PurchaseDetails> by purchases {
+    val activeSubscriptions: Set<String>
+        get() = purchases
+            .filter { it.productType == ProductType.SUBSCRIPTION }
+            .flatMap { it.productIds }
+            .toSet()
+
     val allPurchasedProductIds: Set<String>
-) {
+        get() = purchases.flatMap { it.productIds }
+            .toSet()
+
     /**
      * Checks if the user has an active subscription for a specific product.
      *

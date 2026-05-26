@@ -14,10 +14,7 @@ import java.util.UUID
 class FakeBillingClient(
     var storeCountry: String? = null,
     var products: List<Product> = emptyList(),
-    var purchases: Purchases = Purchases(
-        activeSubscriptions = emptySet(),
-        allPurchasedProductIds = emptySet()
-    )
+    var purchases: Purchases = Purchases(emptyList())
 ) : BillingClient {
     override suspend fun getStoreCountry() = storeCountry
 

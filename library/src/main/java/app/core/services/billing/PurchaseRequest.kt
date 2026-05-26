@@ -1,5 +1,7 @@
 package app.core.services.billing
 
+import app.core.services.billing.model.ReplacementMode
+
 sealed class PurchaseRequest {
     abstract val productId: String
 
@@ -7,6 +9,8 @@ sealed class PurchaseRequest {
 
     data class Subscription(
         override val productId: String,
-        val offerToken: String? = null
+        val offerToken: String? = null,
+        val oldPurchaseToken: String? = null,
+        val replacementMode: ReplacementMode? = null
     ) : PurchaseRequest()
 }

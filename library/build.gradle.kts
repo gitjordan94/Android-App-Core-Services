@@ -26,7 +26,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.5.2\""
+            "\"1.5.4\""
         )
 
         buildConfigField(
@@ -59,10 +59,10 @@ dependencies {
     // Core
     api("androidx.fragment:fragment-ktx:1.8.9")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     // Compose
-    implementation("androidx.compose.ui:ui:1.11.0")
+    implementation("androidx.compose.ui:ui:1.11.2")
 
     // Lifecycle
     val lifecycleVersion = "2.10.0"
@@ -79,14 +79,13 @@ dependencies {
     // Google Play Services
     implementation("com.google.android.gms:play-services-ads-identifier:18.3.0")
     implementation("com.google.android.gms:play-services-appset:16.1.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
 
     implementation("com.google.android.play:age-signals:$ageSignalsVersion")
 
     // Analytics
-    implementation("com.amplitude:analytics-android:1.28.1")
-    implementation("com.amplitude:experiment-android-client:1.15.0")
-    implementation("com.amplitude:plugin-session-replay-android:0.26.0")
+    implementation("com.amplitude:analytics-android:1.28.2")
+    implementation("com.amplitude:plugin-session-replay-android:0.26.1")
     api("com.appsflyer:af-android-sdk:$afVersion")
 
     // Database
@@ -96,7 +95,8 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
 
     // Firebase
-    api(platform("com.google.firebase:firebase-bom:34.12.0"))
+    api(platform("com.google.firebase:firebase-bom:34.14.0"))
+    implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
 
     // ATT

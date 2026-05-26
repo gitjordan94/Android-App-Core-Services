@@ -4,6 +4,25 @@ import android.app.Activity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import app.core.services.billing.BillingClient
+import app.core.services.billing.BillingClientException
+import app.core.services.billing.BillingConfig
+import app.core.services.billing.BillingError
+import app.core.services.billing.PurchaseRequest
+import app.core.services.billing.db.BillingDatabase
+import app.core.services.billing.google.error.BillingException
+import app.core.services.billing.google.extensions.toBillingProductType
+import app.core.services.billing.google.extensions.toBillingReplacementMode
+import app.core.services.billing.google.extensions.toProduct
+import app.core.services.billing.db.entity.toPurchaseData
+import app.core.services.billing.google.extensions.toInternal
+import app.core.services.billing.model.Product
+import app.core.services.billing.model.ProductType
+import app.core.services.billing.model.Purchase
+import app.core.services.billing.model.PurchaseDetails
+import app.core.services.billing.model.PurchaseState
+import app.core.services.billing.model.Purchases
+import app.core.services.billing.model.ReplacementMode
 import com.android.billingclient.api.BillingClient.ProductType.INAPP
 import com.android.billingclient.api.BillingClient.ProductType.SUBS
 import kotlinx.coroutines.CoroutineScope
@@ -15,29 +34,17 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import app.core.services.billing.PurchaseRequest
-import app.core.services.billing.BillingClient
-import app.core.services.billing.BillingConfig
-import app.core.services.billing.PurchasesDataStore
-import app.core.services.billing.BillingError
-import app.core.services.billing.BillingClientException
-import app.core.services.billing.google.error.BillingException
-import app.core.services.billing.google.extensions.toBillingProductType
-import app.core.services.billing.google.extensions.toProduct
-import app.core.services.billing.model.Purchases
-import app.core.services.billing.model.Product
-import app.core.services.billing.model.ProductType
-import app.core.services.billing.model.Purchase
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The default implementation of [BillingClient] for the Google Play Store.
@@ -48,7 +55,7 @@ import javax.inject.Inject
 internal class GoogleBillingClient @Inject constructor(
     private val billingClientWrapper: BillingClientWrapper,
     private val config: BillingConfig,
-    private val purchasesDataStore: PurchasesDataStore,
+    private val billingDatabase: BillingDatabase,
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : BillingClient {
 
@@ -168,7 +175,7 @@ internal class GoogleBillingClient @Inject constructor(
                 if (attempt < maxRetries - 1) {
                     val delay = CONNECTION_RETRY_DELAY_MS * (attempt + 1)
                     Timber.tag(TAG).w("Fetch attempt ${attempt + 1} failed, retrying in ${delay}ms")
-                    delay(delay)
+                    delay(delay.milliseconds)
                 }
             }
         }
@@ -176,29 +183,31 @@ internal class GoogleBillingClient @Inject constructor(
         throw lastException ?: BillingClientException(BillingError.UnknownError)
     }
 
-    override suspend fun getStoreCountry(): String? = withTimeout(OPERATION_TIMEOUT_MS) {
-        try {
-            billingClientWrapper.getBillingConfig()?.countryCode
-        } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Error getting store country")
-            null
+    override suspend fun getStoreCountry(): String? =
+        withTimeout(OPERATION_TIMEOUT_MS.milliseconds) {
+            try {
+                billingClientWrapper.getBillingConfig()?.countryCode
+            } catch (e: Exception) {
+                Timber.tag(TAG).e(e, "Error getting store country")
+                null
+            }
         }
-    }
 
     override suspend fun getPurchases(): Purchases {
         return try {
             fetchPurchasesWithRetry()
         } catch (e: Exception) {
-            Timber.e(e, "Error fetching purchases")
-            purchasesDataStore.getPurchases().first()
+            Timber.tag(TAG).e(e, "Error fetching purchases, returning cached")
+            Purchases(billingDatabase.purchasesDao.getAllPurchases().map { it.toPurchaseData() })
         }
     }
 
     override fun getPurchasesFlow(): Flow<Purchases> {
-        return purchasesDataStore.getPurchases()
+        return billingDatabase.purchasesDao.getAllPurchasesFlow()
+            .map { entities -> Purchases(entities.map { it.toPurchaseData() }) }
             .catch { e ->
                 Timber.tag(TAG).e(e, "Error fetching purchases flow")
-                emit(Purchases(emptySet(), emptySet()))
+                emit(Purchases(emptyList()))
             }
     }
 
@@ -216,7 +225,9 @@ internal class GoogleBillingClient @Inject constructor(
             is PurchaseRequest.Subscription -> purchase(
                 activity = activity,
                 productId = request.productId,
-                offerToken = request.offerToken
+                offerToken = request.offerToken,
+                oldPurchaseToken = request.oldPurchaseToken,
+                replacementMode = request.replacementMode,
             )
         }
     }
@@ -233,7 +244,9 @@ internal class GoogleBillingClient @Inject constructor(
     private suspend fun purchase(
         activity: Activity,
         productId: String,
-        offerToken: String? = null
+        offerToken: String? = null,
+        oldPurchaseToken: String? = null,
+        replacementMode: ReplacementMode? = null,
     ): Purchase {
         val product = try {
             getProducts(
@@ -257,7 +270,9 @@ internal class GoogleBillingClient @Inject constructor(
                 activity = activity,
                 productId = productId,
                 productType = product.type.toBillingProductType(),
-                selectedOfferToken = subscriptionOption?.offerToken
+                selectedOfferToken = subscriptionOption?.offerToken,
+                oldPurchaseToken = oldPurchaseToken,
+                replacementMode = replacementMode?.toBillingReplacementMode(),
             )
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Purchase flow failed for product $productId")
@@ -283,52 +298,48 @@ internal class GoogleBillingClient @Inject constructor(
         return fetchPurchasesWithRetry()
     }
 
-    private suspend fun fetchPurchases(): Purchases = withTimeout(OPERATION_TIMEOUT_MS) {
-        try {
-            val (subsPurchases, inAppPurchases, purchaseHistory) = fetchAllPurchaseData()
+    private suspend fun fetchPurchases(): Purchases {
+        return withTimeout(OPERATION_TIMEOUT_MS.milliseconds) {
+            try {
+                val purchaseDataList = fetchAllPurchaseData()
+                val purchases = Purchases(purchaseDataList)
 
-            val purchases = Purchases(
-                activeSubscriptions = subsPurchases,
-                allPurchasedProductIds = inAppPurchases + purchaseHistory
-            )
+                billingDatabase.purchasesDao.upsertAll(purchaseDataList)
 
-            purchasesDataStore.setPurchases(purchases)
+                Timber.tag(TAG)
+                    .d("Purchases updated: ${purchases.activeSubscriptions.size} subs, ${purchases.allPurchasedProductIds.size} total")
 
-            Timber.tag(TAG)
-                .d("Purchases updated: ${purchases.activeSubscriptions.size} subs, ${purchases.allPurchasedProductIds.size} total")
-
-            purchases
-        } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Error fetching purchases")
-            throw e.toPurchasesException()
+                purchases
+            } catch (e: Exception) {
+                Timber.tag(TAG).e(e, "Error fetching purchases")
+                throw e.toPurchasesException()
+            }
         }
     }
 
-    private suspend fun fetchAllPurchaseData(): Triple<Set<String>, Set<String>, Set<String>> {
+    private suspend fun fetchAllPurchaseData(): List<PurchaseDetails> {
         return coroutineScope.async {
-            val subscriptionPurchasesDeferred = async {
+            val subsDeferred = async {
                 try {
                     billingClientWrapper.queryPurchases(SUBS)
-                        .mapNotNull { it.products.firstOrNull() }
-                        .toSet()
+                        .map { it.toInternal(ProductType.SUBSCRIPTION) }
                 } catch (e: Exception) {
                     Timber.tag(TAG).w(e, "Error fetching subscription purchases")
-                    emptySet()
+                    emptyList()
                 }
             }
 
-            val inAppPurchasesDeferred = async {
+            val inAppDeferred = async {
                 try {
                     billingClientWrapper.queryPurchases(INAPP)
-                        .mapNotNull { it.products.firstOrNull() }
-                        .toSet()
+                        .map { it.toInternal(ProductType.ONE_TIME_PURCHASE) }
                 } catch (e: Exception) {
                     Timber.tag(TAG).w(e, "Error fetching in-app purchases")
-                    emptySet()
+                    emptyList()
                 }
             }
 
-            val inAppPurchaseHistoryDeferred = async {
+            val historyDeferred = async {
                 try {
                     billingClientWrapper.queryPurchaseHistory(INAPP)
                         .filter {
@@ -336,19 +347,30 @@ internal class GoogleBillingClient @Inject constructor(
                                 it.purchaseTime <= cutoffTime
                             } ?: false
                         }
-                        .mapNotNull { it.products.firstOrNull() }
-                        .toSet()
+                        .map { record ->
+                            PurchaseDetails(
+                                productIds = record.products,
+                                orderId = null,
+                                purchaseToken = record.purchaseToken,
+                                productType = ProductType.ONE_TIME_PURCHASE,
+                                isAcknowledged = true,
+                                purchaseTime = record.purchaseTime,
+                                purchaseState = PurchaseState.PURCHASED,
+                            )
+                        }
                 } catch (e: Exception) {
                     Timber.tag(TAG).w(e, "Error fetching purchase history")
-                    emptySet()
+                    emptyList()
                 }
             }
 
-            Triple(
-                subscriptionPurchasesDeferred.await(),
-                inAppPurchasesDeferred.await(),
-                inAppPurchaseHistoryDeferred.await()
-            )
+            // Active purchases take precedence over history entries for the same token
+            val activePurchases = (subsDeferred.await() + inAppDeferred.await())
+                .associateBy { it.purchaseToken }
+            val historyPurchases = historyDeferred.await()
+                .associateBy { it.purchaseToken }
+
+            (activePurchases + historyPurchases.filterKeys { it !in activePurchases }).values.toList()
         }.await()
     }
 
@@ -360,7 +382,7 @@ internal class GoogleBillingClient @Inject constructor(
             return emptyList()
         }
 
-        return withTimeout(OPERATION_TIMEOUT_MS) {
+        return withTimeout(OPERATION_TIMEOUT_MS.milliseconds) {
             val types = type?.let { setOf(it) } ?: setOf(
                 ProductType.ONE_TIME_PURCHASE,
                 ProductType.SUBSCRIPTION
@@ -395,7 +417,7 @@ internal class GoogleBillingClient @Inject constructor(
         coroutineScope.launch {
             try {
                 // Small delay to allow Google Play to process
-                delay(500)
+                delay(500.milliseconds)
                 loadPurchases()
             } catch (e: Exception) {
                 Timber.tag(TAG).e(e, "Error handling purchase update")

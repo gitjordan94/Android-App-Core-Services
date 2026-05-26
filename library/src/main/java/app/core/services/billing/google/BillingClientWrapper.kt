@@ -12,6 +12,7 @@ import com.android.billingclient.api.BillingClient.ProductType
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingConfig
 import com.android.billingclient.api.BillingFlowParams
+import com.android.billingclient.api.BillingFlowParams.SubscriptionUpdateParams.ReplacementMode
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.GetBillingConfigParams
 import com.android.billingclient.api.InAppMessageParams
@@ -56,8 +57,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 import kotlin.math.min
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface BillingClientWrapper {
     val connectionState: StateFlow<BillingConnectionState>
@@ -92,7 +93,9 @@ internal interface BillingClientWrapper {
         activity: Activity,
         productId: String,
         @ProductType productType: String,
-        selectedOfferToken: String?
+        selectedOfferToken: String?,
+        oldPurchaseToken: String?,
+        @ReplacementMode replacementMode: Int?
     ): Purchase
 
     companion object Factory {
@@ -267,7 +270,7 @@ internal class GoogleBilling @Inject constructor(
 
             coroutineScope.launch {
                 try {
-                    delay(reconnectMilliseconds)
+                    delay(reconnectMilliseconds.milliseconds)
                     reconnectionAlreadyScheduled.set(false)
 
                     ensureConnection()
@@ -288,8 +291,10 @@ internal class GoogleBilling @Inject constructor(
     override suspend fun launchBillingFlow(
         activity: Activity,
         productId: String,
-        productType: String,
+        @ProductType productType: String,
         selectedOfferToken: String?,
+        oldPurchaseToken: String?,
+        @ReplacementMode replacementMode: Int?
     ): Purchase {
         Timber.tag(TAG).d("Launching billing flow for product $productId")
 
@@ -321,6 +326,15 @@ internal class GoogleBilling @Inject constructor(
                 .setObfuscatedProfileId(obfuscatedUserId.obfuscatedProfileId)
         } else {
             Timber.tag(TAG).w("Obfuscated user ID not available")
+        }
+
+        if (oldPurchaseToken != null && replacementMode != null) {
+            billingFlowParamsBuilder.setSubscriptionUpdateParams(
+                BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                    .setOldPurchaseToken(oldPurchaseToken)
+                    .setSubscriptionReplacementMode(replacementMode)
+                    .build()
+            )
         }
 
         val result = withConnectedClient {
@@ -382,7 +396,7 @@ internal class GoogleBilling @Inject constructor(
     override suspend fun getProducts(
         productIds: List<String>,
         productType: String,
-    ): List<ProductDetails> = withTimeout(BILLING_OPERATION_TIMEOUT_MS) {
+    ): List<ProductDetails> = withTimeout(BILLING_OPERATION_TIMEOUT_MS.milliseconds) {
         if (productIds.isEmpty()) return@withTimeout emptyList()
 
         ensureConnection()
@@ -430,7 +444,7 @@ internal class GoogleBilling @Inject constructor(
     }
 
     override suspend fun queryPurchases(productType: String): List<Purchase> =
-        withTimeout(BILLING_OPERATION_TIMEOUT_MS) {
+        withTimeout(BILLING_OPERATION_TIMEOUT_MS.milliseconds) {
             ensureConnection()
 
             val (billingResult, purchases) = withConnectedClient {
@@ -458,7 +472,7 @@ internal class GoogleBilling @Inject constructor(
         }
 
     override suspend fun queryPurchaseHistory(productType: String): List<PurchaseHistoryRecord> =
-        withTimeout(BILLING_OPERATION_TIMEOUT_MS) {
+        withTimeout(BILLING_OPERATION_TIMEOUT_MS.milliseconds) {
             ensureConnection()
 
             withContext(ioDispatcher) {
@@ -482,13 +496,13 @@ internal class GoogleBilling @Inject constructor(
         }
 
     override suspend fun getBillingConfig(): BillingConfig? =
-        withTimeout(BILLING_OPERATION_TIMEOUT_MS) {
+        withTimeout(BILLING_OPERATION_TIMEOUT_MS.milliseconds) {
             ensureConnection()
 
             val params = GetBillingConfigParams.newBuilder().build()
 
             withConnectedClient {
-                suspendCoroutine { continuation ->
+                suspendCancellableCoroutine { continuation ->
                     getBillingConfigAsync(params) { billingResult, billingConfig ->
                         when (billingResult.responseCode) {
                             BillingResponseCode.OK -> {
@@ -549,7 +563,7 @@ internal class GoogleBilling @Inject constructor(
             }
 
             try {
-                withTimeout(CONNECTION_TIMEOUT_MS) {
+                withTimeout(CONNECTION_TIMEOUT_MS.milliseconds) {
                     connectionState.first { state ->
                         state is BillingConnectionState.Connected ||
                                 state is BillingConnectionState.Error
@@ -664,7 +678,7 @@ internal class GoogleBilling @Inject constructor(
                         purchases.find { it.purchaseToken == purchaseToken }
                             ?.let { freshPurchase ->
                                 if (!freshPurchase.isAcknowledged) {
-                                    delay(currentDelay)
+                                    delay(currentDelay.milliseconds)
                                     currentDelay = min(currentDelay * 2, 30_000L)
                                     return@repeat
                                 }
@@ -676,7 +690,7 @@ internal class GoogleBilling @Inject constructor(
                         if (attempt < maxRetries - 1) {
                             Timber.tag(TAG)
                                 .w("Acknowledgment failed (attempt ${attempt + 1}), retrying...")
-                            delay(currentDelay)
+                            delay(currentDelay.milliseconds)
                             currentDelay = min(currentDelay * 2, 30_000L)
                         } else {
                             throw BillingException.from(result)
@@ -689,7 +703,7 @@ internal class GoogleBilling @Inject constructor(
                 }
             } catch (e: BillingException) {
                 if (attempt == maxRetries - 1) throw e
-                delay(currentDelay)
+                delay(currentDelay.milliseconds)
                 currentDelay = min(currentDelay * 2, 30_000L)
             }
         }

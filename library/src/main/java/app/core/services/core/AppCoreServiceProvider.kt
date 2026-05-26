@@ -19,7 +19,7 @@ import app.core.services.attribution.GooglePlayInstallReferrerAttributionProvide
 import app.core.services.billing.AnalyticsBillingClientDecorator
 import app.core.services.billing.BillingClient
 import app.core.services.billing.GoogleBillingStoreCountryProvider
-import app.core.services.billing.PurchasesPreferencesDataStore
+import app.core.services.billing.db.BillingDatabase
 import app.core.services.billing.google.BillingClientWrapper
 import app.core.services.billing.google.GoogleBillingClient
 import app.core.services.billing.google.ObfuscatedUserIdProvider
@@ -157,7 +157,7 @@ internal object AppCoreServiceProvider {
                     obfuscatedUserIdProvider = obfuscatedUserIdProvider,
                     acknowledgePurchases = configuration.billingConfig.acknowledgePurchases
                 ),
-                purchasesDataStore = PurchasesPreferencesDataStore.create(configuration.context)
+                billingDatabase = BillingDatabase.create(configuration.context),
             ),
             appsFlyerAnalytics = appsFlyerAnalytics,
             firebaseAnalytics = firebaseAnalytics,

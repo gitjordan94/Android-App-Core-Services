@@ -63,7 +63,7 @@ interface BillingClient {
      * @param activity The current foreground [Activity].
      * @param request The [PurchaseRequest] containing the Activity and product details.
      * @return The resulting [Purchase] object upon a successful transaction.
-     * @throws BillingClientException if the purchase fails or is cancelled by the user.
+     * @throws BillingClientException if the purchase fails or is canceled by the user.
      */
     @Throws(BillingClientException::class)
     suspend fun purchase(activity: Activity, request: PurchaseRequest): Purchase
