@@ -227,8 +227,8 @@ internal class DefaultAppCoreServices(
                     val attribution = listOf(internal, external).awaitAll()
 
                     attribution
-                        .firstOrNull { !it.isOrganic }
-                        ?: attribution.firstOrNull()
+                        .lastOrNull { !it.isOrganic }
+                        ?: attribution.lastOrNull()
                         ?: Attribution()
                 }
 

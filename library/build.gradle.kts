@@ -26,7 +26,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.5.4-ff\""
+            "\"1.5.5-ff\""
         )
 
         buildConfigField(
@@ -84,9 +84,9 @@ dependencies {
     implementation("com.google.android.play:age-signals:$ageSignalsVersion")
 
     // Analytics
-    implementation("com.amplitude:analytics-android:1.28.2")
+    implementation("com.amplitude:analytics-android:1.29.0")
     implementation("com.amplitude:experiment-android-client:1.16.1")
-    implementation("com.amplitude:plugin-session-replay-android:0.26.1")
+    implementation("com.amplitude:plugin-session-replay-android:0.26.2")
     api("com.appsflyer:af-android-sdk:$afVersion")
 
     // Database
