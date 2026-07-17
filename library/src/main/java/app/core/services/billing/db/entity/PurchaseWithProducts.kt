@@ -21,6 +21,7 @@ internal fun PurchaseWithProducts.toPurchaseData(): PurchaseDetails = PurchaseDe
     isAcknowledged = purchase.isAcknowledged,
     purchaseTime = purchase.purchaseTime,
     purchaseState = purchase.purchaseState,
+    userId = purchase.userId,
 )
 
 internal fun PurchaseDetails.toEntity(): PurchaseEntity = PurchaseEntity(
@@ -30,4 +31,5 @@ internal fun PurchaseDetails.toEntity(): PurchaseEntity = PurchaseEntity(
     productType = productType,
     purchaseState = purchaseState,
     purchaseTime = purchaseTime,
+    userId = userId,
 )

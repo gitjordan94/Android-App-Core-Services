@@ -26,7 +26,7 @@ android {
         buildConfigField(
             "String",
             "SDK_VERSION",
-            "\"1.5.5-ff\""
+            "\"1.5.6-ff\""
         )
 
         buildConfigField(
@@ -97,6 +97,7 @@ dependencies {
 
     // Firebase
     api(platform("com.google.firebase:firebase-bom:34.14.0"))
+    implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
 
     // ATT

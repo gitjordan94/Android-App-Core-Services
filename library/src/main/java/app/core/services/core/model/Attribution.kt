@@ -17,5 +17,5 @@ data class Attribution(
     )
 }
 
-val Attribution?.isOrganic
-    get() = this?.mediaSource?.type == MediaSourceType.ORGANIC
+val Attribution.isOrganic
+    get() = mediaSource.type == MediaSourceType.ORGANIC

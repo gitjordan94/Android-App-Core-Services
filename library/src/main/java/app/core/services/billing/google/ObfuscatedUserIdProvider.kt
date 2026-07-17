@@ -1,6 +1,7 @@
 package app.core.services.billing.google
 
 import app.core.services.appsflyer.AppsFlyerUidProvider
+import app.core.services.billing.util.decryptAES
 import app.core.services.billing.util.encryptAES
 import app.core.services.billing.util.sha256
 import timber.log.Timber
@@ -23,6 +24,19 @@ internal class ObfuscatedUserIdProvider(
                 obfuscatedAccountId = userId.sha256(),
                 obfuscatedProfileId = userId.encryptAES(secretKey, iv)
             )
+        } catch (e: Throwable) {
+            Timber.e(e)
+            null
+        }
+    }
+
+    fun decryptUserId(obfuscatedProfileId: String?): String? {
+        if (obfuscatedProfileId.isNullOrEmpty() || secretKey.isEmpty() || iv.isEmpty()) {
+            return null
+        }
+
+        return try {
+            obfuscatedProfileId.decryptAES(secretKey, iv)
         } catch (e: Throwable) {
             Timber.e(e)
             null

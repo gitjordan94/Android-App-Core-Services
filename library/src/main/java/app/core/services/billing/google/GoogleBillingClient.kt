@@ -56,6 +56,7 @@ internal class GoogleBillingClient @Inject constructor(
     private val billingClientWrapper: BillingClientWrapper,
     private val config: BillingConfig,
     private val billingDatabase: BillingDatabase,
+    private val obfuscatedUserIdProvider: ObfuscatedUserIdProvider,
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : BillingClient {
 
@@ -322,7 +323,7 @@ internal class GoogleBillingClient @Inject constructor(
             val subsDeferred = async {
                 try {
                     billingClientWrapper.queryPurchases(SUBS)
-                        .map { it.toInternal(ProductType.SUBSCRIPTION) }
+                        .map { it.toInternal(ProductType.SUBSCRIPTION, obfuscatedUserIdProvider) }
                 } catch (e: Exception) {
                     Timber.tag(TAG).w(e, "Error fetching subscription purchases")
                     emptyList()
@@ -332,7 +333,7 @@ internal class GoogleBillingClient @Inject constructor(
             val inAppDeferred = async {
                 try {
                     billingClientWrapper.queryPurchases(INAPP)
-                        .map { it.toInternal(ProductType.ONE_TIME_PURCHASE) }
+                        .map { it.toInternal(ProductType.ONE_TIME_PURCHASE, obfuscatedUserIdProvider) }
                 } catch (e: Exception) {
                     Timber.tag(TAG).w(e, "Error fetching in-app purchases")
                     emptyList()

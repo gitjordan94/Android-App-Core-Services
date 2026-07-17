@@ -1,11 +1,15 @@
 package app.core.services.billing.google.extensions
 
+import app.core.services.billing.google.ObfuscatedUserIdProvider
 import app.core.services.billing.model.ProductType
 import app.core.services.billing.model.PurchaseDetails
 import app.core.services.billing.model.PurchaseState
 import com.android.billingclient.api.Purchase
 
-internal fun Purchase.toInternal(productType: ProductType): PurchaseDetails {
+internal fun Purchase.toInternal(
+    productType: ProductType,
+    obfuscatedUserIdProvider: ObfuscatedUserIdProvider,
+): PurchaseDetails {
     return PurchaseDetails(
         productIds = products,
         orderId = orderId,
@@ -18,5 +22,6 @@ internal fun Purchase.toInternal(productType: ProductType): PurchaseDetails {
             Purchase.PurchaseState.PENDING -> PurchaseState.PENDING
             else -> PurchaseState.UNKNOWN
         },
+        userId = obfuscatedUserIdProvider.decryptUserId(accountIdentifiers?.obfuscatedProfileId),
     )
 }

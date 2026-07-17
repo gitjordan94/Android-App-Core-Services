@@ -79,6 +79,57 @@ class GooglePlayInstallReferrerAttributionParserTest {
     }
 
     @Test
+    fun `parse returns organic when utm params are not set placeholders`() {
+        val referrer = "utm_source=(not set)&utm_medium=(not set)"
+
+        val result = parser.parse(referrer)
+
+        assertEquals(MediaSource(), result.mediaSource)
+        assertEquals(
+            AttributionSource.GOOGLE_PLAY_INSTALL_REFERRER,
+            result.attributionSource
+        )
+    }
+
+    @Test
+    fun `parse returns organic when utm source is not set without parentheses`() {
+        val referrer = "utm_source=not set&utm_medium=cpc"
+
+        val result = parser.parse(referrer)
+
+        assertEquals(MediaSource(), result.mediaSource)
+    }
+
+    @Test
+    fun `parse returns organic for canonical google play organic referrer`() {
+        val referrer = "utm_source=google-play&utm_medium=organic"
+
+        val result = parser.parse(referrer)
+
+        assertEquals(MediaSource(), result.mediaSource)
+    }
+
+    @Test
+    fun `parse falls back to pid when utm source is a placeholder`() {
+        val referrer = "utm_source=(not set)&pid=snapchat_int"
+
+        val result = parser.parse(referrer)
+
+        assertEquals(MediaSourceType.SNAPCHAT, result.mediaSource.type)
+        assertEquals("snapchat_int", result.mediaSource.value)
+    }
+
+    @Test
+    fun `parse keeps non-organic media source for real utm source`() {
+        val referrer = "utm_source=snapchat&utm_medium=cpc&c=summer_promo"
+
+        val result = parser.parse(referrer)
+
+        assertEquals(MediaSourceType.SNAPCHAT, result.mediaSource.type)
+        assertEquals("summer_promo", result.campaign)
+    }
+
+    @Test
     fun `parse detects tiktokglobal when referrer looks like key value`() {
         val referrer = "tiktokglobal=something"
 

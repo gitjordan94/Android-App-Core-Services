@@ -150,6 +150,7 @@ internal object AppCoreServiceProvider {
                     acknowledgePurchases = configuration.billingConfig.acknowledgePurchases
                 ),
                 billingDatabase = BillingDatabase.create(configuration.context),
+                obfuscatedUserIdProvider = obfuscatedUserIdProvider,
             ),
             appsFlyerAnalytics = appsFlyerAnalytics,
             firebaseAnalytics = firebaseAnalytics,

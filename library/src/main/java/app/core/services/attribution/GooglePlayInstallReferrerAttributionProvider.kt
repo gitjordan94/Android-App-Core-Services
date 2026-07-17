@@ -9,6 +9,7 @@ import app.core.services.core.model.Attribution
 import app.core.services.data.PreferencesDataStore
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 internal class GooglePlayInstallReferrerAttributionProvider(
@@ -22,7 +23,7 @@ internal class GooglePlayInstallReferrerAttributionProvider(
     private val coroutineDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AttributionProvider {
     override suspend fun provide(): Attribution {
-        return with(coroutineDispatcher) {
+        return withContext(coroutineDispatcher) {
             var installReferrer: String? = preferencesDataStore.getInstallReferrer()
 
             Timber.d("Preferences Google Play Install Referrer: $installReferrer")

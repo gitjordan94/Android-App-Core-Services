@@ -82,8 +82,16 @@ internal class GooglePlayInstallReferrerAttributionParser(
             return null
         }
 
-        return params["utm_source"] ?: params["pid"]
+        return params["utm_source"].takeUnless { it.isPlaceholder() }
+            ?: params["pid"].takeUnless { it.isPlaceholder() }
     }
+
+    // Google Play sends "(not set)" when the install has no campaign data —
+    // that is an absent value, not a media source.
+    private fun String?.isPlaceholder(): Boolean =
+        isNullOrBlank() ||
+                equals("(not set)", ignoreCase = true) ||
+                equals("not set", ignoreCase = true)
 
     private fun isGoogleAdsReferrer(params: Map<String, String>): Boolean {
         if (params.size < 3) {

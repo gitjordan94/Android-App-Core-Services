@@ -216,20 +216,20 @@ internal class DefaultAppCoreServices(
                 }
 
                 fun getAttribution(tag: String, deadline: Long) = async(tag) {
+                    // Providers get a slightly earlier deadline so this composite
+                    // deferred completes before consumers awaiting it with [deadline]
+                    // give up and fall back to organic.
+                    val providersDeadline = deadline - PROVIDERS_DEADLINE_MARGIN_MS
+
                     val internal = async {
-                        internalAttributionDeferred.awaitUntil(deadline)
+                        internalAttributionDeferred.awaitUntil(providersDeadline)
                     }
 
                     val external = async {
-                        externalAttributionDeferred.awaitUntil(deadline)
+                        externalAttributionDeferred.awaitUntil(providersDeadline)
                     }
 
-                    val attribution = listOf(internal, external).awaitAll()
-
-                    attribution
-                        .lastOrNull { !it.isOrganic }
-                        ?: attribution.lastOrNull()
-                        ?: Attribution()
+                    mergeAttributions(listOf(internal, external).awaitAll())
                 }
 
                 val initialAttribution = getAttribution(
@@ -652,5 +652,6 @@ internal class DefaultAppCoreServices(
     internal companion object {
         const val MAX_TIMEOUT_MS = 6_500L
         const val INITIAL_ATTRIBUTION_TIMEOUT_MS = 3_000L
+        const val PROVIDERS_DEADLINE_MARGIN_MS = 250L
     }
 }
