@@ -7,5 +7,6 @@ data class PurchaseDetails(
     val productType: ProductType,
     val isAcknowledged: Boolean,
     val purchaseTime: Long,
-    val purchaseState: PurchaseState
+    val purchaseState: PurchaseState,
+    val userId: String? = null
 )

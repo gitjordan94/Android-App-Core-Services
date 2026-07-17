@@ -8,7 +8,7 @@ import app.core.services.billing.db.entity.PurchaseEntity
 import app.core.services.billing.db.entity.PurchaseProductEntity
 
 @Database(
-    version = 1,
+    version = 2,
     entities = [
         PurchaseEntity::class,
         PurchaseProductEntity::class
