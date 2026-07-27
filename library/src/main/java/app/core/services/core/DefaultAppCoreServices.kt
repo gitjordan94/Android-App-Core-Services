@@ -126,7 +126,7 @@ internal class DefaultAppCoreServices(
 
         Timber.i("[start] begin")
 
-        appsFlyerAnalytics.start(context)
+        appsFlyerAnalytics.start()
         val appsFlyerUID = appsFlyerAnalytics.appsFlyerUID
 
         Timber.i("[start] AppsFlyer started, uid=%s", appsFlyerUID)

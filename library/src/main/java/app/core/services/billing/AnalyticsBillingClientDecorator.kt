@@ -1,7 +1,6 @@
 package app.core.services.billing
 
 import android.app.Activity
-import com.appsflyer.AFInAppEventType.INITIATED_CHECKOUT
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +13,7 @@ import app.core.services.amplitude.analytics.AmplitudeAnalytics
 import app.core.services.firebase.FirebaseAnalytics
 import app.core.services.billing.model.Purchases
 import app.core.services.billing.model.Purchase
+import com.appsflyer.share.AFInAppEventType.INITIATED_CHECKOUT
 
 /**
  * A Decorator for the [BillingClient] interface that adds analytics logging

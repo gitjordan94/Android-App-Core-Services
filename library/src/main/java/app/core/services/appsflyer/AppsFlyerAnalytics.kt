@@ -5,21 +5,20 @@ import app.core.services.BuildConfig
 import app.core.services.analytics.Analytics
 import app.core.services.analytics.AnalyticsEvent
 import app.core.services.analytics.PurchaseEventLogger
-import app.core.services.appsflyer.error.AppsFlyerAttributionFailureException
 import app.core.services.appsflyer.error.AppsFlyerConversionFailureException
 import app.core.services.billing.model.Purchase
 import app.core.services.consent.Consent
-import com.appsflyer.AFInAppEventType
-import com.appsflyer.AppsFlyerConsent
-import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
-import com.appsflyer.attribution.AppsFlyerRequestListener
+import com.appsflyer.share.AFInAppEventType
+import com.appsflyer.share.AppsFlyerConsent
+import com.appsflyer.share.AppsFlyerConversionListener
+import com.appsflyer.share.attribution.AppsFlyerRequestListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 internal class AppsFlyerAnalytics(
-    private val devKey: String,
+    devKey: String,
     private val applicationContext: Context,
     private val appsFlyer: AppsFlyerLib,
 ) : Analytics, PurchaseEventLogger {
@@ -55,17 +54,6 @@ internal class AppsFlyerAnalytics(
 
                     _conversionDataFlow.value = ConversionDataResult.Fail(errorMessage)
                 }
-
-                override fun onAppOpenAttribution(attributionData: MutableMap<String, String>?) {
-                    Timber.d("onAppOpenAttribution: $attributionData.")
-                }
-
-                override fun onAttributionFailure(errorMessage: String?) {
-                    Timber.e(
-                        AppsFlyerAttributionFailureException(errorMessage ?: "Unknown error"),
-                        "AppsFlyer attribution failure: $errorMessage."
-                    )
-                }
             },
             applicationContext
         )
@@ -86,12 +74,10 @@ internal class AppsFlyerAnalytics(
         )
     }
 
-    internal fun start(context: Context) {
+    internal fun start() {
         Timber.d("Starting AppsFlyer.")
 
         appsFlyer.start(
-            context,
-            devKey,
             object : AppsFlyerRequestListener {
                 override fun onSuccess() {
                     Timber.d("AppsFlyer start success.")

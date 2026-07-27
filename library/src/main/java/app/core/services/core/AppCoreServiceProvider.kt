@@ -143,7 +143,6 @@ internal object AppCoreServiceProvider {
 
         return AnalyticsBillingClientDecorator(
             decorated = GoogleBillingClient(
-                config = configuration.billingConfig,
                 billingClientWrapper = BillingClientWrapper.create(
                     context = configuration.context,
                     obfuscatedUserIdProvider = obfuscatedUserIdProvider,

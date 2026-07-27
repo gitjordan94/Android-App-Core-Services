@@ -12,7 +12,8 @@ import com.android.billingclient.api.BillingClient.ProductType
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingConfig
 import com.android.billingclient.api.BillingFlowParams
-import com.android.billingclient.api.BillingFlowParams.SubscriptionUpdateParams.ReplacementMode
+import com.android.billingclient.api.BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams
+import com.android.billingclient.api.BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.GetBillingConfigParams
 import com.android.billingclient.api.InAppMessageParams
@@ -21,14 +22,11 @@ import com.android.billingclient.api.InAppMessageResult.InAppMessageResponseCode
 import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
-import com.android.billingclient.api.PurchaseHistoryRecord
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
-import com.android.billingclient.api.QueryPurchaseHistoryParams
 import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.acknowledgePurchase
 import com.android.billingclient.api.queryProductDetails
-import com.android.billingclient.api.queryPurchaseHistory
 import com.android.billingclient.api.queryPurchasesAsync
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -80,9 +78,6 @@ internal interface BillingClientWrapper {
     suspend fun queryAllPurchases(): List<Purchase>
 
     @Throws(BillingException::class)
-    suspend fun queryPurchaseHistory(@ProductType productType: String): List<PurchaseHistoryRecord>
-
-    @Throws(BillingException::class)
     suspend fun getBillingConfig(): BillingConfig?
 
     @Throws(BillingException::class)
@@ -94,6 +89,7 @@ internal interface BillingClientWrapper {
         productId: String,
         @ProductType productType: String,
         selectedOfferToken: String?,
+        oldProductId: String?,
         oldPurchaseToken: String?,
         @ReplacementMode replacementMode: Int?
     ): Purchase
@@ -293,6 +289,7 @@ internal class GoogleBilling @Inject constructor(
         productId: String,
         @ProductType productType: String,
         selectedOfferToken: String?,
+        oldProductId: String?,
         oldPurchaseToken: String?,
         @ReplacementMode replacementMode: Int?
     ): Purchase {
@@ -304,21 +301,32 @@ internal class GoogleBilling @Inject constructor(
             .firstOrNull()
             ?: throw BillingException.DeveloperErrorException("Product $productId not found")
 
-        val params = BillingFlowParams.ProductDetailsParams.newBuilder()
+        val productDetailsParamsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
             .setProductDetails(productDetails)
 
         if (productType == ProductType.SUBS) {
-            params.setOfferToken(
+            productDetailsParamsBuilder.setOfferToken(
                 selectedOfferToken
                     ?: productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
                     ?: throw BillingException.DeveloperErrorException("No offer token available")
             )
+
+            if (oldProductId != null && oldPurchaseToken != null && replacementMode != null) {
+                val productReplacementParams = SubscriptionProductReplacementParams.newBuilder()
+                    .setOldProductId(oldProductId)
+                    .setReplacementMode(replacementMode)
+                    .build()
+
+                productDetailsParamsBuilder.setSubscriptionProductReplacementParams(
+                    productReplacementParams
+                )
+            }
         }
 
         val obfuscatedUserId = obfuscatedUserIdProvider.provideObfuscatedUserId()
 
         val billingFlowParamsBuilder = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(listOf(params.build()))
+            .setProductDetailsParamsList(listOf(productDetailsParamsBuilder.build()))
 
         if (obfuscatedUserId != null) {
             billingFlowParamsBuilder
@@ -328,11 +336,10 @@ internal class GoogleBilling @Inject constructor(
             Timber.tag(TAG).w("Obfuscated user ID not available")
         }
 
-        if (oldPurchaseToken != null && replacementMode != null) {
+        if (oldProductId != null && oldPurchaseToken != null && replacementMode != null) {
             billingFlowParamsBuilder.setSubscriptionUpdateParams(
                 BillingFlowParams.SubscriptionUpdateParams.newBuilder()
                     .setOldPurchaseToken(oldPurchaseToken)
-                    .setSubscriptionReplacementMode(replacementMode)
                     .build()
             )
         }
@@ -471,30 +478,6 @@ internal class GoogleBilling @Inject constructor(
             purchases
         }
 
-    override suspend fun queryPurchaseHistory(productType: String): List<PurchaseHistoryRecord> =
-        withTimeout(BILLING_OPERATION_TIMEOUT_MS.milliseconds) {
-            ensureConnection()
-
-            withContext(ioDispatcher) {
-                val params = QueryPurchaseHistoryParams.newBuilder()
-                    .setProductType(productType)
-                    .build()
-
-                val result = withConnectedClient { queryPurchaseHistory(params) }
-
-                when (result.billingResult.responseCode) {
-                    BillingResponseCode.OK -> {
-                        result.purchaseHistoryRecordList.orEmpty().also { history ->
-                            Timber.tag(TAG)
-                                .d("Retrieved ${history.size} history records for $productType")
-                        }
-                    }
-
-                    else -> throw BillingException.from(result.billingResult)
-                }
-            }
-        }
-
     override suspend fun getBillingConfig(): BillingConfig? =
         withTimeout(BILLING_OPERATION_TIMEOUT_MS.milliseconds) {
             ensureConnection()
@@ -596,10 +579,7 @@ internal class GoogleBilling @Inject constructor(
     private suspend fun onBillingSetupFinished() {
         try {
             val purchases = queryAllPurchases()
-            val history = queryPurchaseHistory(ProductType.INAPP)
-
-            Timber.tag(TAG)
-                .d("Setup complete: ${purchases.size} purchases, ${history.size} history items")
+            Timber.tag(TAG).d("Setup complete: ${purchases.size} purchases")
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error in setup completion")
         }

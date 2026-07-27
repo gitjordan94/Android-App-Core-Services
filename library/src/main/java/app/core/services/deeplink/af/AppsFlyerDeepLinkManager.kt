@@ -13,8 +13,8 @@ import app.core.services.deeplink.DeepLinkResult
 import com.appsflyer.AppsFlyerLib
 import kotlinx.io.IOException
 import timber.log.Timber
-import com.appsflyer.deeplink.DeepLink as AfDeepLink
-import com.appsflyer.deeplink.DeepLinkResult as AfDeepLinkResult
+import com.appsflyer.share.deeplink.DeepLink as AfDeepLink
+import com.appsflyer.share.deeplink.DeepLinkResult as AfDeepLinkResult
 
 /**
  * Manages deep link handling specifically for the AppsFlyer service.

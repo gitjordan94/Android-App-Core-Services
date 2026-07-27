@@ -36,4 +36,6 @@ enum class ReplacementMode {
      * new plan without any credit for the unused portion of the old plan.
      */
     CHARGE_FULL_PRICE,
+
+    KEEP_EXISTING,
 }

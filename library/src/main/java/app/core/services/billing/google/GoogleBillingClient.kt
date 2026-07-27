@@ -6,21 +6,19 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.core.services.billing.BillingClient
 import app.core.services.billing.BillingClientException
-import app.core.services.billing.BillingConfig
 import app.core.services.billing.BillingError
 import app.core.services.billing.PurchaseRequest
 import app.core.services.billing.db.BillingDatabase
+import app.core.services.billing.db.entity.toPurchaseData
 import app.core.services.billing.google.error.BillingException
 import app.core.services.billing.google.extensions.toBillingProductType
 import app.core.services.billing.google.extensions.toBillingReplacementMode
-import app.core.services.billing.google.extensions.toProduct
-import app.core.services.billing.db.entity.toPurchaseData
 import app.core.services.billing.google.extensions.toInternal
+import app.core.services.billing.google.extensions.toProduct
 import app.core.services.billing.model.Product
 import app.core.services.billing.model.ProductType
 import app.core.services.billing.model.Purchase
 import app.core.services.billing.model.PurchaseDetails
-import app.core.services.billing.model.PurchaseState
 import app.core.services.billing.model.Purchases
 import app.core.services.billing.model.ReplacementMode
 import com.android.billingclient.api.BillingClient.ProductType.INAPP
@@ -54,7 +52,6 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 internal class GoogleBillingClient @Inject constructor(
     private val billingClientWrapper: BillingClientWrapper,
-    private val config: BillingConfig,
     private val billingDatabase: BillingDatabase,
     private val obfuscatedUserIdProvider: ObfuscatedUserIdProvider,
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -227,8 +224,8 @@ internal class GoogleBillingClient @Inject constructor(
                 activity = activity,
                 productId = request.productId,
                 offerToken = request.offerToken,
-                oldPurchaseToken = request.oldPurchaseToken,
-                replacementMode = request.replacementMode,
+                oldProductId = request.replacement?.oldProductId,
+                replacementMode = request.replacement?.replacementMode,
             )
         }
     }
@@ -246,6 +243,7 @@ internal class GoogleBillingClient @Inject constructor(
         activity: Activity,
         productId: String,
         offerToken: String? = null,
+        oldProductId: String? = null,
         oldPurchaseToken: String? = null,
         replacementMode: ReplacementMode? = null,
     ): Purchase {
@@ -272,7 +270,8 @@ internal class GoogleBillingClient @Inject constructor(
                 productId = productId,
                 productType = product.type.toBillingProductType(),
                 selectedOfferToken = subscriptionOption?.offerToken,
-                oldPurchaseToken = oldPurchaseToken,
+                oldProductId = oldProductId,
+                oldPurchaseToken = null,
                 replacementMode = replacementMode?.toBillingReplacementMode(),
             )
         } catch (e: Exception) {
@@ -333,45 +332,19 @@ internal class GoogleBillingClient @Inject constructor(
             val inAppDeferred = async {
                 try {
                     billingClientWrapper.queryPurchases(INAPP)
-                        .map { it.toInternal(ProductType.ONE_TIME_PURCHASE, obfuscatedUserIdProvider) }
+                        .map {
+                            it.toInternal(
+                                ProductType.ONE_TIME_PURCHASE,
+                                obfuscatedUserIdProvider
+                            )
+                        }
                 } catch (e: Exception) {
                     Timber.tag(TAG).w(e, "Error fetching in-app purchases")
                     emptyList()
                 }
             }
 
-            val historyDeferred = async {
-                try {
-                    billingClientWrapper.queryPurchaseHistory(INAPP)
-                        .filter {
-                            config.consumedInAppPurchasesTimeMillis?.let { cutoffTime ->
-                                it.purchaseTime <= cutoffTime
-                            } ?: false
-                        }
-                        .map { record ->
-                            PurchaseDetails(
-                                productIds = record.products,
-                                orderId = null,
-                                purchaseToken = record.purchaseToken,
-                                productType = ProductType.ONE_TIME_PURCHASE,
-                                isAcknowledged = true,
-                                purchaseTime = record.purchaseTime,
-                                purchaseState = PurchaseState.PURCHASED,
-                            )
-                        }
-                } catch (e: Exception) {
-                    Timber.tag(TAG).w(e, "Error fetching purchase history")
-                    emptyList()
-                }
-            }
-
-            // Active purchases take precedence over history entries for the same token
-            val activePurchases = (subsDeferred.await() + inAppDeferred.await())
-                .associateBy { it.purchaseToken }
-            val historyPurchases = historyDeferred.await()
-                .associateBy { it.purchaseToken }
-
-            (activePurchases + historyPurchases.filterKeys { it !in activePurchases }).values.toList()
+            subsDeferred.await() + inAppDeferred.await()
         }.await()
     }
 

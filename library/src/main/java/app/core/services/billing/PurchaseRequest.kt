@@ -10,7 +10,13 @@ sealed class PurchaseRequest {
     data class Subscription(
         override val productId: String,
         val offerToken: String? = null,
-        val oldPurchaseToken: String? = null,
-        val replacementMode: ReplacementMode? = null
-    ) : PurchaseRequest()
+        val replacement: Replacement? = null,
+    ) : PurchaseRequest() {
+
+        data class Replacement(
+            val oldProductId: String,
+            val oldPurchaseToken: String,
+            val replacementMode: ReplacementMode
+        )
+    }
 }
