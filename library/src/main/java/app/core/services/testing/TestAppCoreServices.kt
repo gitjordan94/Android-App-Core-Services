@@ -1,5 +1,6 @@
 package app.core.services.testing
 
+import android.app.Activity
 import android.content.Context
 import app.core.services.AppCoreServices
 import app.core.services.analytics.Analytics
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 class TestAppCoreServices(
     override val analytics: Analytics = NoOpAnalytics,
@@ -38,6 +40,10 @@ class TestAppCoreServices(
         // No-op
     }
 
+    override fun onLauncherActivityCreated(activity: Activity) {
+        // No-op
+    }
+
     override fun setConsent(consent: Consent) {
         // No-op
     }
@@ -51,7 +57,7 @@ class TestAppCoreServices(
             ?: Attribution()
 
         try {
-            withTimeout(3_000) {
+            withTimeout(3_000.milliseconds) {
                 remoteConfig.fetch(_userId, attribution.toMap())
             }
         } catch (e: Throwable) {

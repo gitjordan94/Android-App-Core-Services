@@ -1,5 +1,6 @@
 package app.core.services
 
+import android.app.Activity
 import android.content.Context
 import app.core.services.AppCoreServices.Companion.configure
 import app.core.services.amplitude.sessionreplay.SessionReplayConfig
@@ -73,6 +74,16 @@ interface AppCoreServices {
      * @param context The application [Context].
      */
     fun start(context: Context)
+
+    /**
+     * Captures launch intent data from the launcher Activity for attribution/deep link
+     * resolution.
+     *
+     * Call once from the launcher `Activity.onCreate`, before [start].
+     *
+     * @param activity The launcher [Activity].
+     */
+    fun onLauncherActivityCreated(activity: Activity)
 
     /**
      * Bootstraps the SDK by concurrently loading all data required for app startup:

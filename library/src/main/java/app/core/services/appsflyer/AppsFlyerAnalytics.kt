@@ -1,5 +1,6 @@
 package app.core.services.appsflyer
 
+import android.app.Activity
 import android.content.Context
 import app.core.services.BuildConfig
 import app.core.services.analytics.Analytics
@@ -77,17 +78,21 @@ internal class AppsFlyerAnalytics(
     internal fun start() {
         Timber.d("Starting AppsFlyer.")
 
-        appsFlyer.start(
-            object : AppsFlyerRequestListener {
-                override fun onSuccess() {
-                    Timber.d("AppsFlyer start success.")
-                }
+        appsFlyer.registerSessionReadyListener {
+            Timber.d("AppsFlyer session is ready!")
 
-                override fun onError(code: Int, error: String) {
-                    Timber.e("AppsFlyer start error: $error.")
+            appsFlyer.start(
+                object : AppsFlyerRequestListener {
+                    override fun onSuccess() {
+                        Timber.d("AppsFlyer start success.")
+                    }
+
+                    override fun onError(code: Int, error: String) {
+                        Timber.e("AppsFlyer start error: $error.")
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     override fun setUserProperties(properties: Map<String, Any?>?) {
@@ -112,5 +117,10 @@ internal class AppsFlyerAnalytics(
 
     internal fun setAdditionalData(data: Map<String, Any>) {
         appsFlyer.setAdditionalData(data)
+    }
+
+    internal fun collectLauncherActivityData(activity: Activity) {
+        Timber.d("Collecting AppsFlyer launcher activity data.")
+        appsFlyer.collectDataFromLauncherActivity(activity)
     }
 }

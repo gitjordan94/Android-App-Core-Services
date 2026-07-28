@@ -1,5 +1,6 @@
 package app.core.services.core
 
+import android.app.Activity
 import android.content.Context
 import android.os.SystemClock
 import app.core.services.AppCoreServices
@@ -116,6 +117,10 @@ internal class DefaultAppCoreServices(
         appsFlyerAnalytics.setConsent(consent)
         amplitudeAnalytics.setConsent(consent)
         firebaseAnalytics.setConsent(consent)
+    }
+
+    override fun onLauncherActivityCreated(activity: Activity) {
+        appsFlyerAnalytics.collectLauncherActivityData(activity)
     }
 
     override fun start(context: Context) {
