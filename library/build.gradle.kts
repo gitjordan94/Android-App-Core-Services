@@ -108,7 +108,7 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.7")
 
     // Network
-    val ktorVersion = "3.0.3"
+    val ktorVersion = "3.5.1"
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-android:$ktorVersion")
     implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
@@ -116,8 +116,8 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
