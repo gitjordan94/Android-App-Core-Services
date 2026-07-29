@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import kotlin.coroutines.resume
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val TIMEOUT_MS = 10_000L
 
@@ -20,7 +21,7 @@ internal class GoogleInstallReferrerProvider(
 ) : InstallReferrerProvider {
     override suspend fun getInstallReferrer(): InstallReferrerDetails? {
         return withContext(ioDispatcher) {
-            withTimeoutOrNull(TIMEOUT_MS) {
+            withTimeoutOrNull(TIMEOUT_MS.milliseconds) {
                 suspendCancellableCoroutine { continuation ->
                     val client = InstallReferrerClient.newBuilder(applicationContext)
                         .build()

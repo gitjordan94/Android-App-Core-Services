@@ -6,6 +6,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun <T> Deferred<T>.getCompletedOrNull(): T? {
@@ -22,11 +23,12 @@ internal suspend fun <T> Deferred<T>.awaitUntil(deadline: Long): T? {
         return getCompletedOrNull()
     }
     return try {
-        withTimeoutOrNull(remaining) { await() } ?: getCompletedOrNull()
+        withTimeoutOrNull(remaining.milliseconds) { await() } ?: getCompletedOrNull()
     } catch (e: CancellationException) {
+        Timber.e(e, "awaitUntil cancelled")
         throw e
     } catch (e: Throwable) {
-        Timber.w(e, "awaitUntil swallowed exception")
+        Timber.e(e, "awaitUntil swallowed exception")
         getCompletedOrNull()
     }
 }

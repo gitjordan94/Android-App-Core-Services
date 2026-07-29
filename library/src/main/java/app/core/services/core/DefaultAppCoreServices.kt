@@ -51,7 +51,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -226,15 +225,11 @@ internal class DefaultAppCoreServices(
                     // give up and fall back to organic.
                     val providersDeadline = deadline - PROVIDERS_DEADLINE_MARGIN_MS
 
-                    val internal = async {
-                        internalAttributionDeferred.awaitUntil(providersDeadline)
-                    }
-
-                    val external = async {
-                        externalAttributionDeferred.awaitUntil(providersDeadline)
-                    }
-
-                    mergeAttributions(listOf(internal, external).awaitAll())
+                    raceAttributions(
+                        internalAttributionDeferred = internalAttributionDeferred,
+                        externalAttributionDeferred = externalAttributionDeferred,
+                        providersDeadline = providersDeadline,
+                    )
                 }
 
                 val initialAttribution = getAttribution(
