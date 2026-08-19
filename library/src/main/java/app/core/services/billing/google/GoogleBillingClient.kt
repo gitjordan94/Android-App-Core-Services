@@ -226,6 +226,7 @@ internal class GoogleBillingClient @Inject constructor(
                 offerToken = request.offerToken,
                 oldProductId = request.replacement?.oldProductId,
                 replacementMode = request.replacement?.replacementMode,
+                oldPurchaseToken = request.replacement?.oldPurchaseToken
             )
         }
     }
