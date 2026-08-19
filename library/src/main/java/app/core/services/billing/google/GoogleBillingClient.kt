@@ -271,7 +271,7 @@ internal class GoogleBillingClient @Inject constructor(
                 productType = product.type.toBillingProductType(),
                 selectedOfferToken = subscriptionOption?.offerToken,
                 oldProductId = oldProductId,
-                oldPurchaseToken = null,
+                oldPurchaseToken = oldPurchaseToken,
                 replacementMode = replacementMode?.toBillingReplacementMode(),
             )
         } catch (e: Exception) {
